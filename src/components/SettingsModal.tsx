@@ -51,6 +51,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onToast, 
     api.getAlertSettings().then(setSettings).catch(() => {});
     refreshMobile();
     refreshSessions();
+    const sTimer = setInterval(refreshSessions, 3000);
+    return () => clearInterval(sTimer);
   }, []);
 
   useEffect(() => {
@@ -291,51 +293,107 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onToast, 
 
           {/* Connected Accounts / Embedded WebView2 Sessions */}
           <div className="space-y-2.5 pt-3" style={{ borderTop: '1px solid var(--border)' }}>
-            <div>
-              <div className="text-xs font-semibold" style={{ color: 'var(--accent)' }}>
-                Bağlı Hesaplar & Dahili WebView2 Oturumları (Extension’sız Arka Plan Tarama)
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <div className="text-xs font-semibold" style={{ color: 'var(--accent)' }}>
+                  Bağlı Hesaplar & Dahili WebView2 Oturumları (Gerçek Doğrulamalı)
+                </div>
+                <div className="text-[11px] mt-0.5" style={{ color: 'var(--muted)' }}>
+                  &quot;Giriş&quot; ile oturum aç, &quot;Test&quot; ile kaç etkinlik/ürün çektiğini canlı gör. WAF engelleyen sitelerde (örn. Akamai) Brave eklentisi devreye girer.
+                </div>
               </div>
-              <div className="text-[11px] mt-0.5" style={{ color: 'var(--muted)' }}>
-                Bir kez kendi elinle giriş yap → Hayye şifreni asla saklamaz, sadece yerel WebView2 oturumunla arka planda tarama yapar.
-              </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  await api.resetSiteSessions();
+                  refreshSessions();
+                  onToast('Tüm oturum durumları sıfırlandı.');
+                }}
+                className="px-2.5 py-1 rounded-full text-[10px] font-semibold cursor-pointer shrink-0"
+                style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--muted)' }}
+              >
+                Sıfırla
+              </button>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {sessions.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      const msg = await api.openSiteSession(s.id);
-                      onToast(msg);
-                      refreshSessions();
-                    } catch (e) {
-                      onToast(String(e));
-                    }
-                  }}
-                  className="p-2.5 rounded-2xl text-left flex items-center justify-between gap-2 cursor-pointer transition"
-                  style={{
-                    background: 'var(--surface-2)',
-                    border: s.connected_at ? '1px solid color-mix(in srgb, var(--accent) 45%, transparent)' : '1px solid var(--border)',
-                  }}
-                >
-                  <div className="min-w-0">
-                    <div className="text-xs font-semibold truncate">{s.name}</div>
-                    <div className="text-[10px]" style={{ color: s.connected_at ? 'var(--accent)' : 'var(--muted)' }}>
-                      {s.connected_at ? 'Oturum Bağlı ✓' : s.kind === 'events' ? 'Bilet / Etkinlik' : 'Mağaza / 2. El'}
-                    </div>
-                  </div>
-                  <span
-                    className="px-2 py-0.5 rounded-full text-[10px] font-semibold shrink-0"
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {sessions.map((s) => {
+                const isVerified = s.status === 'verified';
+                const isBlocked = s.status === 'blocked';
+                const isPending = s.status === 'pending';
+                const statusColor = isVerified
+                  ? 'var(--accent)'
+                  : isBlocked
+                  ? 'var(--danger)'
+                  : isPending
+                  ? '#F59E0B'
+                  : 'var(--muted)';
+                const statusText = isVerified
+                  ? s.last_item_count > 0
+                    ? `Doğrulandı ✓ • ${s.last_item_count} veri`
+                    : 'Oturum Doğrulandı ✓'
+                  : isBlocked
+                  ? 'WAF Engeli ✕ (Brave Eklentisi)'
+                  : isPending
+                  ? s.note || 'Giriş bekleniyor'
+                  : 'Bağlı değil';
+                return (
+                  <div
+                    key={s.id}
+                    className="p-2.5 rounded-2xl flex items-center justify-between gap-2"
                     style={{
-                      background: s.connected_at ? 'color-mix(in srgb, var(--accent) 18%, transparent)' : 'var(--bg)',
-                      color: s.connected_at ? 'var(--accent)' : 'var(--ink)',
+                      background: 'var(--surface-2)',
+                      border: isVerified
+                        ? '1px solid color-mix(in srgb, var(--accent) 45%, transparent)'
+                        : isBlocked
+                        ? '1px solid rgba(244,63,94,0.4)'
+                        : '1px solid var(--border)',
                     }}
                   >
-                    {s.connected_at ? 'Aç' : 'Giriş'}
-                  </span>
-                </button>
-              ))}
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold truncate">{s.name}</div>
+                      <div className="text-[10px] truncate" style={{ color: statusColor }}>
+                        {statusText}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const msg = await api.openSiteSession(s.id);
+                            onToast(msg);
+                            refreshSessions();
+                          } catch (e) {
+                            onToast(String(e));
+                          }
+                        }}
+                        className="px-2.5 py-1 rounded-full text-[10px] font-semibold cursor-pointer"
+                        style={{ background: 'var(--bg)', color: 'var(--ink)', border: '1px solid var(--border)' }}
+                      >
+                        Giriş
+                      </button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const msg = await api.testSingleSiteScan(s.id);
+                            onToast(msg);
+                          } catch (e) {
+                            onToast(String(e));
+                          }
+                        }}
+                        className="px-2.5 py-1 rounded-full text-[10px] font-semibold cursor-pointer"
+                        style={{
+                          background: 'color-mix(in srgb, var(--accent) 16%, transparent)',
+                          color: 'var(--accent)',
+                        }}
+                      >
+                        Test
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 

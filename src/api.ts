@@ -93,4 +93,6 @@ export const api = {
   scanEventsViaWebview: () => invoke<string>('scan_events_via_webview'),
   deepSearchViaWebview: (query: string) => invoke<string>('deep_search_via_webview', { query }),
   getWebviewSearchResults: () => invoke<SearchCandidate[]>('get_webview_search_results'),
+  testSingleSiteScan: (siteId: string) => invoke<string>('test_single_site_scan', { siteId }),
+  resetSiteSessions: () => invoke<void>('reset_site_sessions'),
 };

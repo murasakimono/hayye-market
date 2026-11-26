@@ -558,9 +558,22 @@ pub fn spawn_bridge_server() {
                 } else if method == "GET" && path == "/manifest.webmanifest" {
                     ("200 OK", "application/manifest+json", MANIFEST_JSON.to_string())
                 } else if method == "GET" && path == "/ping" {
-                    ("200 OK", "application/json", r#"{"ok":true,"app":"Hayye Market","version":"4.3.1"}"#.to_string())
+                    ("200 OK", "application/json", r#"{"ok":true,"app":"Hayye Market","version":"4.3.2"}"#.to_string())
+                } else if method == "POST" && path == "/api/webview-session-status" {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(body_str) {
+                        let sid = v["site_id"].as_str().unwrap_or("");
+                        let src = v["source"].as_str().unwrap_or(sid);
+                        let st = v["status"].as_str().unwrap_or("pending");
+                        let note = v["note"].as_str().unwrap_or("");
+                        if !sid.is_empty() {
+                            let _ = db::open_db().and_then(|c| db::update_site_session_status(&c, sid, st, None, note));
+                            crate::events::emit(&format!("session_status:{}:{}:{}", src, st, note));
+                        }
+                    }
+                    ("200 OK", "application/json", r#"{"ok":true}"#.to_string())
                 } else if method == "POST" && path == "/api/webview-ingest-events" {
                     if let Ok(v) = serde_json::from_str::<serde_json::Value>(body_str) {
+                        let sid = v["site_id"].as_str().unwrap_or("");
                         let mut parsed = Vec::new();
                         if let Some(arr) = v["events"].as_array() {
                             for it in arr {
@@ -585,8 +598,12 @@ pub fn spawn_bridge_server() {
                         let count = db::open_db()
                             .and_then(|c| db::upsert_webview_events(&c, &parsed))
                             .unwrap_or(0);
-                        if count > 0 {
-                            crate::events::emit("events_updated");
+                        if !sid.is_empty() && count > 0 {
+                            let src = parsed.first().map(|e| e.source.as_str()).unwrap_or(sid);
+                            let _ = db::open_db().and_then(|c| {
+                                db::update_site_session_status(&c, sid, "verified", Some(count), &format!("{} etkinlik çekildi", count))
+                            });
+                            crate::events::emit(&format!("events_updated:{}:{}", src, count));
                         }
                         ("200 OK", "application/json", format!(r#"{{"ok":true,"count":{}}}"#, count))
                     } else {
@@ -594,6 +611,7 @@ pub fn spawn_bridge_server() {
                     }
                 } else if method == "POST" && path == "/api/webview-ingest-search" {
                     if let Ok(v) = serde_json::from_str::<serde_json::Value>(body_str) {
+                        let sid = v["site_id"].as_str().unwrap_or("");
                         let mut parsed = Vec::new();
                         if let Some(arr) = v["items"].as_array() {
                             for it in arr {
@@ -616,8 +634,13 @@ pub fn spawn_bridge_server() {
                         }
                         let n = parsed.len();
                         if n > 0 {
+                            if !sid.is_empty() {
+                                let _ = db::open_db().and_then(|c| {
+                                    db::update_site_session_status(&c, sid, "verified", Some(n), &format!("{} ürün çekildi", n))
+                                });
+                            }
                             crate::webview_scanner::push_webview_search_results(parsed);
-                            crate::events::emit("search_updated");
+                            crate::events::emit(&format!("search_updated:{}", n));
                         }
                         ("200 OK", "application/json", format!(r#"{{"ok":true,"count":{}}}"#, n))
                     } else {
@@ -625,7 +648,13 @@ pub fn spawn_bridge_server() {
                     }
                 } else if method == "POST" && path == "/api/webview-attention" {
                     if let Ok(v) = serde_json::from_str::<serde_json::Value>(body_str) {
+                        let sid = v["site_id"].as_str().unwrap_or("");
                         let src = v["source"].as_str().unwrap_or("Site");
+                        if !sid.is_empty() {
+                            let _ = db::open_db().and_then(|c| {
+                                db::update_site_session_status(&c, sid, "blocked", None, "Doğrulama/WAF engeli")
+                            });
+                        }
                         crate::events::emit(&format!("webview_attention:{}", src));
                     }
                     ("200 OK", "application/json", r#"{"ok":true}"#.to_string())

@@ -132,14 +132,74 @@ pub fn list_site_sessions() -> Vec<SiteSessionInfo> {
         .unwrap_or_default();
     SITES
         .iter()
-        .map(|s| SiteSessionInfo {
-            id: s.id.to_string(),
-            name: s.name.to_string(),
-            kind: s.kind.to_string(),
-            login_url: s.login_url.to_string(),
-            connected_at: connected.get(s.id).cloned(),
+        .map(|s| {
+            let (connected_at, status, last_item_count, note) = match connected.get(s.id) {
+                Some((ts, st, cnt, n)) => (Some(ts.clone()), st.clone(), *cnt, n.clone()),
+                None => (None, "none".to_string(), 0, String::new()),
+            };
+            SiteSessionInfo {
+                id: s.id.to_string(),
+                name: s.name.to_string(),
+                kind: s.kind.to_string(),
+                login_url: s.login_url.to_string(),
+                connected_at,
+                status,
+                last_item_count,
+                note,
+            }
         })
         .collect()
+}
+
+fn build_session_verifier_script(source_name: &str, site_id: &str) -> String {
+    format!(
+        r##"
+(function() {{
+  const SITE_ID = "{site_id}";
+  const SOURCE = "{source_name}";
+  const BRIDGE = "http://127.0.0.1:47821";
+  let lastSent = "";
+
+  function report(status, note) {{
+    const key = status + "|" + note;
+    if (key === lastSent) return;
+    lastSent = key;
+    fetch(BRIDGE + "/api/webview-session-status", {{
+      method: "POST",
+      headers: {{ "Content-Type": "application/json" }},
+      body: JSON.stringify({{ site_id: SITE_ID, source: SOURCE, status, note }})
+    }}).catch(() => {{}});
+  }}
+
+  function check() {{
+    const txt = (document.title + " " + (document.body ? document.body.innerText.slice(0, 1200) : "")).toLowerCase();
+    if (/access denied|edgesuite\.net|you don't have permission|403 forbidden/.test(txt)) {{
+      report("blocked", "Akamai/WAF engeli — Brave eklentisiyle kullan");
+      return;
+    }}
+    if (/verify you are human|just a moment|ben robot değilim|captcha/.test(txt)) {{
+      report("pending", "İnsan doğrulaması bekleniyor");
+      return;
+    }}
+    // Check real logged-in signals in page header/nav
+    const navTxt = Array.from(document.querySelectorAll("header, nav, [class*='header'], [class*='account'], [class*='user']"))
+      .map(el => el.innerText || "").join(" ").toLowerCase();
+    const looksLoggedIn = /hesabım|çıkış yap|biletlerim|siparişlerim|profilim|oturumu kapat|logout|sign out/.test(navTxt)
+      && !/giriş yap\s*\/\s*üye ol/.test(navTxt);
+    if (looksLoggedIn) {{
+      report("verified", "Gerçek oturum doğrulandı");
+    }} else {{
+      report("pending", "Sayfa açıldı — giriş bekleniyor");
+    }}
+  }}
+
+  setTimeout(check, 2200);
+  setInterval(check, 4500);
+}})();
+"##,
+        site_id = site_id,
+        source_name = source_name
+    )
 }
 
 pub fn open_site_login_window(app: &AppHandle, site_id: &str) -> Result<String, String> {
@@ -152,7 +212,7 @@ pub fn open_site_login_window(app: &AppHandle, site_id: &str) -> Result<String, 
     if let Some(existing) = app.get_webview_window(&label) {
         let _ = existing.show();
         let _ = existing.set_focus();
-        return Ok(format!("{} oturum penceresi öne getirildi.", def.name));
+        return Ok(format!("{} penceresi öne getirildi.", def.name));
     }
 
     let url = def
@@ -160,20 +220,23 @@ pub fn open_site_login_window(app: &AppHandle, site_id: &str) -> Result<String, 
         .parse::<tauri::Url>()
         .map_err(|e| e.to_string())?;
 
+    let verify_js = build_session_verifier_script(def.name, def.id);
+
+    // Do NOT spoof user_agent — WebView2's native Edge UA matches its real TLS/Sec-CH-UA headers (avoids Akamai Access Denied)
     WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
-        .title(&format!("Hayye Oturum — {} (Giriş yaptıktan sonra pencereyi kapatabilirsin)", def.name))
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+        .title(&format!("Hayye Oturum — {} (Giriş yaptıktan sonra kapatabilirsin)", def.name))
         .inner_size(1100.0, 760.0)
         .resizable(true)
         .center()
+        .initialization_script(&verify_js)
         .build()
         .map_err(|e| e.to_string())?;
 
     if let Ok(conn) = db::open_db() {
-        let _ = db::mark_site_connected(&conn, def.id);
+        let _ = db::update_site_session_status(&conn, def.id, "pending", None, "Giriş bekleniyor");
     }
 
-    Ok(format!("{} oturum penceresi açıldı. Giriş yaptıktan sonra oturum Hayye profilinde kalıcı saklanır.", def.name))
+    Ok(format!("{} penceresi açıldı. Gerçek giriş yaptığında durum otomatik 'Doğrulandı' olur.", def.name))
 }
 
 fn build_events_extractor_script(source_name: &str, site_id: &str) -> String {
@@ -386,9 +449,9 @@ pub fn spawn_background_scan(app: &AppHandle, site_id: &str, query: Option<&str>
         build_shopping_extractor_script(def.name, def.id)
     };
 
+    // Native WebView2 UA (no spoof mismatch)
     let win = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
         .title(&format!("Hayye Arka Plan Tarayıcı — {}", def.name))
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
         .inner_size(1200.0, 820.0)
         .visible(false)
         .skip_taskbar(true)

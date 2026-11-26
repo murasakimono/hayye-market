@@ -668,6 +668,23 @@ fn get_webview_search_results() -> Vec<SearchCandidate> {
     webview_scanner::get_webview_search_results()
 }
 
+#[tauri::command]
+async fn test_single_site_scan(app: tauri::AppHandle, site_id: String) -> Result<String, String> {
+    let q = if ["bubilet", "biletix", "passo", "zorlupsm", "paribu"].contains(&site_id.as_str()) {
+        None
+    } else {
+        Some("parfüm")
+    };
+    webview_scanner::spawn_background_scan(&app, &site_id, q)?;
+    Ok(format!("{} arka planda canlı test ediliyor (4-6 sn içinde gerçek çekilen sayı görünür)...", site_id))
+}
+
+#[tauri::command]
+fn reset_site_sessions() -> Result<(), String> {
+    let conn = db::open_db()?;
+    db::clear_all_site_sessions(&conn)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -746,7 +763,9 @@ pub fn run() {
             open_site_session,
             scan_events_via_webview,
             deep_search_via_webview,
-            get_webview_search_results
+            get_webview_search_results,
+            test_single_site_scan,
+            reset_site_sessions
         ])
         .run(tauri::generate_context!())
         .expect("Hayye Market başlatılırken hata oluştu");

@@ -195,6 +195,9 @@ export interface SiteSessionInfo {
   kind: 'events' | 'shopping' | string;
   login_url: string;
   connected_at: string | null;
+  status: 'none' | 'pending' | 'verified' | 'blocked' | string;
+  last_item_count: number;
+  note: string;
 }
 
 export interface VaultMetaUpdate {

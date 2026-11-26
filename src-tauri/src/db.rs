@@ -980,26 +980,62 @@ fn ensure_webview_tables(conn: &Connection) {
             connected_at TEXT NOT NULL
         );",
     );
+    let _ = conn.execute("ALTER TABLE webview_sessions ADD COLUMN status TEXT NOT NULL DEFAULT 'none'", []);
+    let _ = conn.execute("ALTER TABLE webview_sessions ADD COLUMN last_item_count INTEGER NOT NULL DEFAULT 0", []);
+    let _ = conn.execute("ALTER TABLE webview_sessions ADD COLUMN note TEXT NOT NULL DEFAULT ''", []);
 }
 
-pub fn mark_site_connected(conn: &Connection, site_id: &str) -> Result<(), String> {
+pub fn update_site_session_status(
+    conn: &Connection,
+    site_id: &str,
+    status: &str,
+    last_item_count: Option<usize>,
+    note: &str,
+) -> Result<(), String> {
     ensure_webview_tables(conn);
+    let now = Utc::now().to_rfc3339();
+    let cnt = last_item_count.map(|c| c as i64);
     conn.execute(
-        "INSERT INTO webview_sessions (site_id, connected_at) VALUES (?1, ?2) ON CONFLICT(site_id) DO UPDATE SET connected_at = excluded.connected_at",
-        params![site_id, Utc::now().to_rfc3339()],
+        "INSERT INTO webview_sessions (site_id, connected_at, status, last_item_count, note)
+         VALUES (?1, ?2, ?3, COALESCE(?4, 0), ?5)
+         ON CONFLICT(site_id) DO UPDATE SET
+           connected_at = excluded.connected_at,
+           status = excluded.status,
+           last_item_count = COALESCE(?4, webview_sessions.last_item_count),
+           note = excluded.note",
+        params![site_id, now, status, cnt, note],
     )
     .map_err(|e| e.to_string())?;
     Ok(())
 }
 
-pub fn list_connected_sites(conn: &Connection) -> Result<std::collections::HashMap<String, String>, String> {
+pub fn clear_all_site_sessions(conn: &Connection) -> Result<(), String> {
+    ensure_webview_tables(conn);
+    conn.execute("DELETE FROM webview_sessions", [])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn list_connected_sites(
+    conn: &Connection,
+) -> Result<std::collections::HashMap<String, (String, String, usize, String)>, String> {
     ensure_webview_tables(conn);
     let mut stmt = conn
-        .prepare("SELECT site_id, connected_at FROM webview_sessions")
+        .prepare("SELECT site_id, connected_at, status, last_item_count, note FROM webview_sessions")
         .map_err(|e| e.to_string())?;
     let mut map = std::collections::HashMap::new();
     let rows = stmt
-        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+        .query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                (
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, i64>(3).unwrap_or(0).max(0) as usize,
+                    r.get::<_, String>(4).unwrap_or_default(),
+                ),
+            ))
+        })
         .map_err(|e| e.to_string())?;
     for r in rows.flatten() {
         map.insert(r.0, r.1);

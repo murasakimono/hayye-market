@@ -193,6 +193,9 @@ pub struct SiteSessionInfo {
     pub kind: String,
     pub login_url: String,
     pub connected_at: Option<String>,
+    pub status: String, // "none" | "pending" | "verified" | "blocked"
+    pub last_item_count: usize,
+    pub note: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

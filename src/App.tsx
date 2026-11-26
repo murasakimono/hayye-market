@@ -242,12 +242,18 @@ export default function App() {
       es = new EventSource('http://127.0.0.1:47821/api/events');
       es.onmessage = (ev) => {
         const msg = String(ev.data || '');
-        if (msg === 'events_updated') {
+        if (msg.startsWith('events_updated')) {
+          const parts = msg.split(':');
           api.fetchLiveEvents().then(setEvents).catch(() => {});
-          notify('Arka plan bilet taraması yeni etkinlikler yakaladı!');
+          notify(
+            parts.length >= 3
+              ? `✓ ${parts[1]}: ${parts[2]} canlı etkinlik çekilip Sahne'ye eklendi!`
+              : 'Arka plan bilet taraması yeni etkinlikler yakaladı!'
+          );
           return;
         }
-        if (msg === 'search_updated') {
+        if (msg.startsWith('search_updated')) {
+          const cnt = msg.split(':')[1] || '';
           api.getWebviewSearchResults().then((wv) => {
             if (wv.length > 0) {
               setCandidates((prev) => {
@@ -255,8 +261,15 @@ export default function App() {
                 const merged = [...wv.filter((x) => !urls.has(x.url)), ...prev];
                 return merged.sort((a, b) => a.price_try - b.price_try);
               });
+              if (cnt) notify(`✓ Dahili oturum araması ${cnt} canlı ürün çekti.`);
             }
           }).catch(() => {});
+          return;
+        }
+        if (msg.startsWith('session_status:')) {
+          const [, src, st, note] = msg.split(':');
+          if (st === 'verified') notify(`✓ ${src} oturumu doğrulandı!`);
+          else if (st === 'blocked') notify(`✕ ${src}: ${note || 'WAF engeli — Brave eklentisini kullan'}`);
           return;
         }
         if (msg.startsWith('webview_attention:')) {
