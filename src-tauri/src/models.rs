@@ -149,6 +149,26 @@ pub struct AlertSettings {
     pub active_theme: String,
     pub monthly_budget_try: f64,
     pub user_cards: String,
+    pub discover_keywords: String,
+    pub discover_muted: String,
+    pub discover_alerts_enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscoverItem {
+    pub id: String,
+    pub title: String,
+    pub brand: String,
+    pub category: String,
+    pub price_try: f64,
+    pub drop_pct: f64,
+    pub heat_score: u8,
+    pub image_url: String,
+    pub url: String,
+    pub source: String,
+    pub is_flash_error: bool,
+    pub matches_personal: bool,
+    pub offer_count: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

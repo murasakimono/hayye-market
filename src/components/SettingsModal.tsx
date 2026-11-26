@@ -23,6 +23,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onToast, 
     active_theme: 'obsidian-aurora',
     monthly_budget_try: 15000,
     user_cards: 'Bonus, World, Maximum',
+    discover_keywords: 'nike, adidas, zara, dyson, ninja, parfüm, rtx, macbook, apple, philips, sephora',
+    discover_muted: 'bebek bezi, deterjan, kedi maması, köpek maması, oto lastik, tuvalet kağıdı',
+    discover_alerts_enabled: true,
   });
   const [mobile, setMobile] = useState<MobileAccessInfo | null>(null);
   const [testing, setTesting] = useState(false);
@@ -198,6 +201,43 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onToast, 
                 style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--ink)' }}
               />
             </label>
+          </div>
+
+          {/* Discover Personal Radar & Mute */}
+          <div className="space-y-2.5 pt-3" style={{ borderTop: '1px solid var(--border)' }}>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold" style={{ color: 'var(--accent)' }}>
+                Keşfet Kişisel Radarı & Anti-Çöp Filtresi
+              </span>
+              <label className="flex items-center gap-1.5 text-[11px] cursor-pointer" style={{ color: 'var(--muted)' }}>
+                <input
+                  type="checkbox"
+                  checked={settings.discover_alerts_enabled}
+                  onChange={(e) => setSettings({ ...settings, discover_alerts_enabled: e.target.checked })}
+                />
+                %35+ / Kişisel düşüşte telefon bildirimi
+              </label>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+              <label className="space-y-1 block">
+                <span className="text-[11px] block" style={{ color: 'var(--muted)' }}>Öne Çıkarılacak Kelimeler / Markalar</span>
+                <input
+                  value={settings.discover_keywords}
+                  onChange={(e) => setSettings({ ...settings, discover_keywords: e.target.value })}
+                  className="w-full rounded-xl px-3 py-2 text-xs focus:outline-none"
+                  style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--ink)' }}
+                />
+              </label>
+              <label className="space-y-1 block">
+                <span className="text-[11px] block" style={{ color: 'var(--muted)' }}>Susturulan / Gizlenen Kategoriler</span>
+                <input
+                  value={settings.discover_muted}
+                  onChange={(e) => setSettings({ ...settings, discover_muted: e.target.value })}
+                  className="w-full rounded-xl px-3 py-2 text-xs focus:outline-none"
+                  style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--ink)' }}
+                />
+              </label>
+            </div>
           </div>
 
           {/* Mobile & Cloudflare */}

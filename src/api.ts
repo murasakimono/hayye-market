@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type {
   AddManualUsedRequest,
   AlertSettings,
+  DiscoverItem,
   FolderItem,
   MarketRates,
   MobileAccessInfo,
@@ -41,6 +42,7 @@ export const api = {
   markPurchased: (productId: number, priceTry: number | null) =>
     invoke<void>('mark_purchased', { productId, priceTry }),
   freezePriceSnapshots: () => invoke<number>('freeze_price_snapshots'),
+  fetchDiscoverDeals: () => invoke<DiscoverItem[]>('fetch_discover_deals'),
   setActiveTheme: (theme: string) => invoke<void>('set_active_theme', { theme }),
   analyzeUsedWithOllama: (
     title: string,

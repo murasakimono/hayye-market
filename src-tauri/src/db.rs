@@ -843,6 +843,15 @@ pub fn load_settings(conn: &Connection) -> AlertSettings {
         active_theme: get("active_theme", "obsidian-aurora"),
         monthly_budget_try: get("monthly_budget_try", "15000").parse().unwrap_or(15000.0),
         user_cards: get("user_cards", "Bonus, World, Maximum"),
+        discover_keywords: get(
+            "discover_keywords",
+            "nike, adidas, zara, dyson, ninja, parfüm, rtx, macbook, apple, philips, sephora",
+        ),
+        discover_muted: get(
+            "discover_muted",
+            "bebek bezi, deterjan, kedi maması, köpek maması, oto lastik, tuvalet kağıdı, yumuşatıcı",
+        ),
+        discover_alerts_enabled: get("discover_alerts_enabled", "1") != "0",
     }
 }
 
@@ -859,6 +868,12 @@ pub fn save_settings(conn: &Connection, s: &AlertSettings) -> Result<(), String>
         ("active_theme", s.active_theme.clone()),
         ("monthly_budget_try", s.monthly_budget_try.round().to_string()),
         ("user_cards", s.user_cards.clone()),
+        ("discover_keywords", s.discover_keywords.clone()),
+        ("discover_muted", s.discover_muted.clone()),
+        (
+            "discover_alerts_enabled",
+            if s.discover_alerts_enabled { "1" } else { "0" }.to_string(),
+        ),
     ];
     for (k, v) in pairs {
         conn.execute(

@@ -3,7 +3,7 @@
   <h1>HAYYE MARKET</h1>
   <p><strong>Editorial Lookbook Dark — Evrensel Fiyat, Stok, Moda/Kozmetik &amp; 2. El İlan İstihbaratı</strong></p>
   <p>
-    <img src="https://img.shields.io/badge/version-3.0.0-10B981?style=flat-square" alt="Version 3.0.0" />
+    <img src="https://img.shields.io/badge/version-3.1.0-10B981?style=flat-square" alt="Version 3.1.0" />
     <img src="https://img.shields.io/badge/stack-Tauri%20v2%20%2B%20Rust%20%2B%20Framer%20Motion-090A0C?style=flat-square" alt="Tauri v2 + Rust" />
     <img src="https://img.shields.io/badge/platform-Windows%20%2B%20Brave%20SidePanel%20%2B%20iOS%20PWA-3B82F6?style=flat-square" alt="Windows + Brave + iOS PWA" />
   </p>

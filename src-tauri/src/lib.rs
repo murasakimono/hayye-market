@@ -1,5 +1,6 @@
 mod bridge;
 mod db;
+mod discover;
 mod models;
 mod notify;
 mod scraper_engine;
@@ -353,6 +354,12 @@ fn freeze_price_snapshots() -> Result<usize, String> {
 }
 
 #[tauri::command]
+async fn fetch_discover_deals() -> Result<Vec<DiscoverItem>, String> {
+    let settings = db::open_db().map(|c| db::load_settings(&c))?;
+    Ok(discover::fetch_discover_feed(&settings).await)
+}
+
+#[tauri::command]
 fn set_active_theme(theme: String) -> Result<(), String> {
     let conn = db::open_db()?;
     conn.execute(
@@ -586,6 +593,7 @@ pub fn run() {
             set_product_vote,
             mark_purchased,
             freeze_price_snapshots,
+            fetch_discover_deals,
             set_active_theme,
             analyze_used_with_ollama,
             get_saved_total,

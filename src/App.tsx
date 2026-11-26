@@ -6,6 +6,7 @@ import {
   Camera,
   Check,
   Clock,
+  Compass,
   CreditCard,
   ExternalLink,
   Flame,
@@ -33,6 +34,7 @@ import { PriceChart } from './components/PriceChart';
 import { SettingsModal } from './components/SettingsModal';
 import { THEMES, applyThemeToDom } from './themes';
 import {
+  type DiscoverItem,
   type FolderItem,
   type MarketRates,
   type ProductDetail,
@@ -42,7 +44,8 @@ import {
   fmtUsd,
 } from './types';
 
-type DockTab = 'gallery' | 'radar' | 'shared' | 'moodboard' | 'orders';
+type DockTab = 'discover' | 'gallery' | 'radar' | 'shared' | 'moodboard' | 'orders';
+type DiscoverCategory = 'all' | 'personal' | 'flash' | 'tech' | 'fashion' | 'cosmetics' | 'home';
 type CurrencyMode = 'TRY' | 'USD' | 'GOLD';
 
 function daysSince(iso: string | null): number {
@@ -100,6 +103,9 @@ export default function App() {
   });
   const [folders, setFolders] = useState<FolderItem[]>([]);
   const [products, setProducts] = useState<ProductDetail[]>([]);
+  const [discoverItems, setDiscoverItems] = useState<DiscoverItem[]>([]);
+  const [discoverLoading, setDiscoverLoading] = useState(false);
+  const [discoverCat, setDiscoverCat] = useState<DiscoverCategory>('all');
   const [activeTab, setActiveTab] = useState<DockTab>('gallery');
   const [activeFolder, setActiveFolder] = useState<number | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -228,6 +234,59 @@ export default function App() {
       notify(`Tema güncellendi: ${t?.name} (iPhone & Eklenti senkron)`);
     } catch {
       // Preview mode
+    }
+  };
+
+  const loadDiscover = async () => {
+    setDiscoverLoading(true);
+    try {
+      const items = await api.fetchDiscoverDeals();
+      setDiscoverItems(items);
+    } catch (err) {
+      notify(String(err));
+    } finally {
+      setDiscoverLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'discover' && discoverItems.length === 0 && !discoverLoading) {
+      loadDiscover();
+    }
+  }, [activeTab]);
+
+  const filteredDiscover = useMemo(() => {
+    if (discoverCat === 'all') return discoverItems;
+    if (discoverCat === 'personal') return discoverItems.filter((d) => d.matches_personal);
+    if (discoverCat === 'flash') return discoverItems.filter((d) => d.is_flash_error || d.drop_pct >= 25);
+    return discoverItems.filter((d) => d.category === discoverCat);
+  }, [discoverItems, discoverCat]);
+
+  const top5Drops = useMemo(
+    () => [...discoverItems].sort((a, b) => b.drop_pct - a.drop_pct).slice(0, 5),
+    [discoverItems]
+  );
+
+  const handleSaveDiscover = async (d: DiscoverItem, askIlayda: boolean) => {
+    try {
+      const folderId =
+        d.category === 'fashion' ? 2 : d.category === 'cosmetics' ? 3 : d.category === 'home' ? 5 : 1;
+      const pid = await api.trackFromCandidate(folderId, {
+        title: d.title,
+        price_try: d.price_try,
+        store_name: d.brand || 'Akakçe',
+        url: d.url,
+        image_url: d.image_url,
+        source: d.source,
+        offer_count: d.offer_count,
+      });
+      if (askIlayda) {
+        await api.setProductVote(pid, 'metehan', 'buy', `Keşfet'te -%${Math.round(d.drop_pct)} düşmüş!`);
+      }
+      await loadAll();
+      notify(askIlayda ? 'Ortak Panoya gönderildi (İlayda telefondan görebilir)!' : 'Koleksiyona eklendi!');
+    } catch (err) {
+      notify(String(err));
     }
   };
 
@@ -679,6 +738,9 @@ export default function App() {
               transition={{ type: 'spring', stiffness: 320, damping: 28 }}
               className="font-editorial text-4xl sm:text-5xl leading-none"
             >
+              {activeTab === 'discover' && 'Keşfet — Gerçek İndirim Akışı'}
+              {activeTab === 'discover' &&
+                `${discoverItems.length} doğrulanmış canlı düşüş • Anti-çöp filtreli, sahte bindirimden arındırılmış fırsatlar.`}
               {activeTab === 'gallery' && 'Koleksiyon & Lookbook'}
               {activeTab === 'radar' && 'Canlı Fırsat Radarı'}
               {activeTab === 'shared' && 'Metehan × İlayda Ortak Pano'}
@@ -686,6 +748,8 @@ export default function App() {
               {activeTab === 'orders' && 'Siparişler & 14 Gün Koruması'}
             </motion.h1>
             <p className="text-xs mt-2" style={{ color: 'var(--muted)' }}>
+              {activeTab === 'discover' &&
+                `${discoverItems.length} doğrulanmış canlı düşüş • Anti-çöp filtreli, sahte bindirimden arındırılmış fırsatlar.`}
               {activeTab === 'gallery' &&
                 `${folderProducts.length} takip edilen parça • Sepet Sıfır ${fmtPrice(basketTotals.newSum)}${
                   basketTotals.diff > 0 ? ` • 2. El Karma ile ${fmtPrice(basketTotals.diff)} tasarruf` : ''
@@ -827,8 +891,174 @@ export default function App() {
           </div>
         )}
 
-        {/* Empty State */}
-        {displayedList.length === 0 ? (
+        {/* Editorial Magazine Discover View */}
+        {activeTab === 'discover' ? (
+          <div className="space-y-6">
+            {/* Discover Category Pills & Refresh */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
+                {(
+                  [
+                    { id: 'all', label: '🔥 En Sıcaklar' },
+                    { id: 'personal', label: '✦ Sana Özel' },
+                    { id: 'flash', label: '⚡ Flaş / %25+' },
+                    { id: 'tech', label: '💻 Teknoloji & PC' },
+                    { id: 'fashion', label: '🧥 Giyim & Sneaker' },
+                    { id: 'cosmetics', label: '✨ Kozmetik' },
+                    { id: 'home', label: '🍳 Ev & Mutfak' },
+                  ] as const
+                ).map((c) => {
+                  const act = discoverCat === c.id;
+                  return (
+                    <button
+                      key={c.id}
+                      onClick={() => setDiscoverCat(c.id)}
+                      className="px-4 py-1.5 rounded-full text-xs font-medium cursor-pointer shrink-0 transition"
+                      style={{
+                        background: act ? 'var(--ink)' : 'var(--surface-2)',
+                        color: act ? 'var(--bg)' : 'var(--muted)',
+                        border: '1px solid var(--border)',
+                      }}
+                    >
+                      {c.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <button
+                onClick={loadDiscover}
+                disabled={discoverLoading}
+                className="px-4 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 cursor-pointer shrink-0"
+                style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${discoverLoading ? 'animate-spin' : ''}`} style={{ color: 'var(--accent)' }} />
+                {discoverLoading ? 'Taranıyor...' : 'Canlı Yenile'}
+              </button>
+            </div>
+
+            {/* Top 5 Biggest Drops Showcase Strip */}
+            {discoverCat === 'all' && top5Drops.length > 0 && (
+              <div className="space-y-2.5">
+                <div className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--accent)' }}>
+                  ✦ Günün En Büyük 5 Gerçek Düşüşü
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+                  {top5Drops.map((d) => (
+                    <motion.div
+                      key={d.id}
+                      whileHover={{ y: -4 }}
+                      className="rounded-2xl glass-card overflow-hidden flex flex-col cursor-pointer"
+                      onClick={() => api.openExternal(d.url)}
+                    >
+                      <div className="relative aspect-[4/3] overflow-hidden" style={{ background: 'var(--surface-2)' }}>
+                        {d.image_url && <img src={d.image_url} alt="" className="w-full h-full object-cover" />}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/25" />
+                        <span
+                          className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono-num font-bold"
+                          style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}
+                        >
+                          -%{Math.round(d.drop_pct)}
+                        </span>
+                        <div className="absolute bottom-2.5 left-3 right-3 font-mono-num text-base font-bold text-white">
+                          {fmtPrice(d.price_try)}
+                        </div>
+                      </div>
+                      <div className="p-3 text-xs font-medium line-clamp-2 leading-snug">{d.title}</div>
+                    </motion.div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Main Discover Editorial Grid */}
+            {discoverLoading && discoverItems.length === 0 ? (
+              <div className="rounded-3xl glass-card py-20 text-center text-xs" style={{ color: 'var(--muted)' }}>
+                Canlı Türkiye indirim kaynakları taranıyor ve sahte indirimler eleniyor...
+              </div>
+            ) : filteredDiscover.length === 0 ? (
+              <div className="rounded-3xl glass-card py-16 text-center text-xs" style={{ color: 'var(--muted)' }}>
+                Bu kategoride şu an eşleşen canlı düşüş yok. “En Sıcaklar” sekmesine bakabilir veya Yenile’ye basabilirsin.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+                {filteredDiscover.map((d, idx) => (
+                  <motion.div
+                    key={d.id}
+                    initial={{ opacity: 0, y: 14 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ type: 'spring', stiffness: 320, damping: 28, delay: Math.min(idx * 0.02, 0.2) }}
+                    whileHover={{ y: -5 }}
+                    className="rounded-3xl glass-card overflow-hidden flex flex-col"
+                  >
+                    <div className="relative aspect-[4/3] overflow-hidden" style={{ background: 'var(--surface-2)' }}>
+                      {d.image_url ? (
+                        <img src={d.image_url} alt={d.title} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center opacity-20">
+                          <ShoppingBag className="w-10 h-10" />
+                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/30" />
+                      <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
+                        <span
+                          className="px-2.5 py-1 rounded-full text-[10px] font-mono-num font-bold"
+                          style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}
+                        >
+                          -%{Math.round(d.drop_pct)} GERÇEK DÜŞÜŞ
+                        </span>
+                        {d.matches_personal && (
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-black/60 text-amber-300 border border-amber-400/40">
+                            ✦ SANA ÖZEL
+                          </span>
+                        )}
+                      </div>
+                      <span className="absolute top-3 right-3 px-2.5 py-1 rounded-full text-[10px] font-mono-num bg-black/55 text-white/90 border border-white/15">
+                        Isı {d.heat_score}
+                      </span>
+                      <div className="absolute bottom-3 left-4 right-4 flex items-end justify-between">
+                        <div className="font-mono-num text-xl font-bold text-white drop-shadow">
+                          {fmtPrice(d.price_try)}
+                        </div>
+                        <span className="text-[10px] text-white/80 font-mono-num">+{d.offer_count} satıcı</span>
+                      </div>
+                    </div>
+
+                    <div className="p-4 flex-1 flex flex-col gap-3">
+                      <div className="text-sm font-medium line-clamp-2 leading-snug">{d.title}</div>
+                      <div className="text-[11px]" style={{ color: 'var(--muted)' }}>
+                        {d.brand || 'Piyasa'} • {d.source}
+                      </div>
+                      <div className="mt-auto pt-2 flex items-center gap-1.5" style={{ borderTop: '1px solid var(--border)' }}>
+                        <button
+                          onClick={() => handleSaveDiscover(d, false)}
+                          className="flex-1 py-2 px-2.5 rounded-xl text-[11px] font-bold cursor-pointer transition"
+                          style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}
+                        >
+                          + Koleksiyon
+                        </button>
+                        <button
+                          onClick={() => handleSaveDiscover(d, true)}
+                          className="flex-1 py-2 px-2.5 rounded-xl text-[11px] font-semibold cursor-pointer transition"
+                          style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+                        >
+                          ♥ İlayda’ya Sor
+                        </button>
+                        <button
+                          onClick={() => api.openExternal(d.url)}
+                          className="p-2 rounded-xl cursor-pointer"
+                          style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+                          title="Mağazaya Git"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : displayedList.length === 0 ? (
           <motion.div
             initial={{ opacity: 0, y: 14 }}
             animate={{ opacity: 1, y: 0 }}
@@ -1114,6 +1344,7 @@ export default function App() {
         <div className="flex items-center gap-1 p-1.5 rounded-full glass-panel shadow-2xl">
           {(
             [
+              { id: 'discover', label: 'Keşfet', icon: Compass, badge: 0 },
               { id: 'gallery', label: 'Galeri', icon: LayoutGrid, badge: 0 },
               { id: 'radar', label: 'Radar', icon: Flame, badge: radarProducts.length },
               { id: 'shared', label: 'Ortak', icon: Users, badge: 0 },

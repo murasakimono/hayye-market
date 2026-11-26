@@ -187,6 +187,7 @@ const IOS_PWA_HTML: &str = r##"<!doctype html>
     <div id="list">Yükleniyor...</div>
   </div>
   <nav class="dock">
+    <button id="t-discover" class="d-btn" onclick="setTab('discover')">Keşfet</button>
     <button id="t-gallery" class="d-btn active" onclick="setTab('gallery')">Galeri</button>
     <button id="t-radar" class="d-btn" onclick="setTab('radar')">Radar</button>
     <button id="t-shared" class="d-btn" onclick="setTab('shared')">Ortak</button>
@@ -199,6 +200,7 @@ const IOS_PWA_HTML: &str = r##"<!doctype html>
     let who = localStorage.getItem('hayye_who') || 'metehan';
     let tab = 'gallery';
     let cache = [];
+    let discoverCache = [];
     let curTheme = 'obsidian-aurora';
 
     function applyTheme(t) {
@@ -217,11 +219,35 @@ const IOS_PWA_HTML: &str = r##"<!doctype html>
     function setWho(w) { who = w; localStorage.setItem('hayye_who', w); syncWhoUI(); render(); }
     function setTab(t) {
       tab = t;
-      ['gallery','radar','shared','orders'].forEach(x => {
+      ['discover','gallery','radar','shared','orders'].forEach(x => {
         document.getElementById('t-' + x).className = 'd-btn' + (x === t ? ' active' : '');
       });
       document.getElementById('hint').style.display = t === 'shared' ? 'block' : 'none';
+      if (t === 'discover' && !discoverCache.length) { loadDiscover(); }
+      else { render(); }
+    }
+    async function loadDiscover() {
+      document.getElementById('list').innerHTML = '<div class="card"><div class="body" style="text-align:center;color:var(--muted)">Gerçek indirimler taranıyor...</div></div>';
+      const r = await fetch('/api/discover');
+      discoverCache = await r.json();
       render();
+    }
+    async function saveDiscover(idx, askOther) {
+      const d = discoverCache[idx];
+      if (!d) return;
+      const r = await fetch('/ingest/product', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ title: d.title, url: d.url, price_try: d.price_try, store_name: d.brand || 'Akakçe', image_url: d.image_url })
+      });
+      const res = await r.json();
+      if (res.ok && askOther && res.product_id) {
+        await fetch('/api/vote', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ product_id: res.product_id, who, vote: 'buy' })
+        });
+      }
+      document.getElementById('msg').textContent = askOther ? '✓ Ortak Panoya gönderildi!' : '✓ Koleksiyona eklendi!';
+      load();
     }
     async function vote(pid, v) {
       await fetch('/api/vote', {
@@ -253,6 +279,31 @@ const IOS_PWA_HTML: &str = r##"<!doctype html>
     }
 
     function render() {
+      const el = document.getElementById('list');
+      if (tab === 'discover') {
+        if (!discoverCache.length) {
+          el.innerHTML = '<div class="card"><div class="body" style="text-align:center;color:var(--muted)">Fırsat bulunamadı.</div></div>';
+          return;
+        }
+        el.innerHTML = discoverCache.slice(0, 40).map((d, idx) => `<div class="card">
+          ${d.image_url ? `<div class="hero"><img src="${d.image_url}" alt="" /><div class="hero-grad"></div>
+            <div class="pill-top"><span class="badge dip">-%${Math.round(d.drop_pct)}</span>
+              ${d.matches_personal ? '<span class="badge">✦ SANA ÖZEL</span>' : ''}
+              ${d.is_flash_error ? '<span class="badge fake">⚡ FLAŞ</span>' : ''}
+            </div>
+            <div class="price-ov"><div class="price">${fmt(d.price_try)}</div><span class="used-pill">Isı ${d.heat_score}</span></div></div>` : ''}
+          <div class="body">
+            <div class="title">${d.title}</div>
+            <div class="meta"><span>${d.brand || d.source}</span><span>+${d.offer_count} satıcı</span></div>
+            <div class="actions">
+              <button class="a-btn sniper" onclick="saveDiscover(${idx}, false)">+ Koleksiyon</button>
+              <button class="a-btn" onclick="saveDiscover(${idx}, true)">♥ Ortak Pano</button>
+              <a class="a-btn" style="flex:.45" href="${d.url}" target="_blank">↗</a>
+            </div>
+          </div>
+        </div>`).join('');
+        return;
+      }
       let items = cache;
       const radarCount = cache.filter(p => p.discount_verdict.status.includes('GENUINE') || (p.best_used_try && p.best_used_try <= p.best_new_try * 0.8)).length;
       if ('setAppBadge' in navigator) {
@@ -263,7 +314,6 @@ const IOS_PWA_HTML: &str = r##"<!doctype html>
       } else if (tab === 'orders') {
         items = cache.filter(p => p.purchased_price_try !== null);
       }
-      const el = document.getElementById('list');
       if (!items.length) {
         el.innerHTML = '<div class="card"><div class="body" style="text-align:center;color:var(--muted)">Bu görünümde henüz ürün yok.</div></div>';
         return;
@@ -412,7 +462,26 @@ pub fn spawn_bridge_server() {
                 } else if method == "GET" && path == "/manifest.webmanifest" {
                     ("200 OK", "application/manifest+json", MANIFEST_JSON.to_string())
                 } else if method == "GET" && path == "/ping" {
-                    ("200 OK", "application/json", r#"{"ok":true,"app":"Hayye Market","version":"3.0.0"}"#.to_string())
+                    ("200 OK", "application/json", r#"{"ok":true,"app":"Hayye Market","version":"3.1.0"}"#.to_string())
+                } else if method == "GET" && path == "/api/discover" {
+                    let settings = db::open_db().map(|c| db::load_settings(&c)).unwrap_or(crate::models::AlertSettings {
+                        discord_webhook: String::new(),
+                        telegram_bot_token: String::new(),
+                        telegram_chat_id: String::new(),
+                        ntfy_topic: String::new(),
+                        refresh_interval_min: 45,
+                        cloudflare_tunnel_url: String::new(),
+                        cloudflare_tunnel_token: String::new(),
+                        cloudflare_worker_key: String::new(),
+                        active_theme: "obsidian-aurora".to_string(),
+                        monthly_budget_try: 15000.0,
+                        user_cards: String::new(),
+                        discover_keywords: String::new(),
+                        discover_muted: String::new(),
+                        discover_alerts_enabled: false,
+                    });
+                    let list = crate::discover::fetch_discover_feed(&settings).await;
+                    ("200 OK", "application/json", serde_json::to_string(&list).unwrap_or_else(|_| "[]".into()))
                 } else if method == "GET" && path == "/api/theme" {
                     match db::open_db() {
                         Ok(c) => {

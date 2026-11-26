@@ -153,6 +153,25 @@ export interface AlertSettings {
   active_theme: string;
   monthly_budget_try: number;
   user_cards: string;
+  discover_keywords: string;
+  discover_muted: string;
+  discover_alerts_enabled: boolean;
+}
+
+export interface DiscoverItem {
+  id: string;
+  title: string;
+  brand: string;
+  category: string;
+  price_try: number;
+  drop_pct: number;
+  heat_score: number;
+  image_url: string;
+  url: string;
+  source: string;
+  is_flash_error: boolean;
+  matches_personal: boolean;
+  offer_count: number;
 }
 
 export interface UsedAiAnalysis {
