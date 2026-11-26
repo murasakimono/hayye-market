@@ -120,6 +120,14 @@ export interface ProductDetail {
   used_listings: UsedListing[];
   history: PricePoint[];
   updated_at: string;
+  vote_metehan: string;
+  vote_ilayda: string;
+  shared_note: string;
+  added_by: string;
+  purchased_price_try: number | null;
+  purchased_at: string | null;
+  snapshot_price_try: number | null;
+  snapshot_at: string | null;
 }
 
 export interface SearchCandidate {

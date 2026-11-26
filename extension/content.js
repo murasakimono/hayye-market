@@ -1,192 +1,226 @@
 (() => {
   const BRIDGE = 'http://127.0.0.1:47821';
-  const host = location.hostname.replace(/^www\./, '');
-  const isUsedSite = /sahibinden|dolap|letgo/.test(host);
-  const isFashionSite = /zara|bershka|stradivarius|pullandbear|massimodutti|oysho|flawwear|hypetr|36clo|nike|beymen|boyner/.test(host);
-  const isCosmeticsSite = /sephora|gratis|watsons|rossmann/.test(host);
+  if (document.getElementById('hayye-floating-pill')) return;
 
-  function parsePrice(txt) {
-    if (!txt) return 0;
-    const m = txt.match(/([0-9]{1,3}(?:\.[0-9]{3})+|[0-9]{2,7})(?:,([0-9]{1,2}))?/);
-    if (!m) return 0;
-    return parseFloat(m[1].replace(/\./g, '') + '.' + (m[2] || '00')) || 0;
+  const host = location.hostname.replace(/^www\./, '');
+  const isSecondHand = /sahibinden|dolap|letgo/i.test(host);
+  const isFavOrCart = /favori|wishlist|sepet|cart|bag|saved|lists|likes/i.test(location.pathname + location.search);
+
+  function parsePrice(str) {
+    if (!str) return 0;
+    const cleaned = String(str).replace(/[^\d.,]/g, '').trim();
+    if (!cleaned) return 0;
+    const norm = cleaned.includes(',') && cleaned.includes('.')
+      ? cleaned.replace(/\./g, '').replace(',', '.')
+      : cleaned.includes(',') && cleaned.split(',')[1]?.length <= 2
+      ? cleaned.replace(',', '.')
+      : cleaned.replace(/\./g, '');
+    const v = parseFloat(norm);
+    return Number.isFinite(v) ? v : 0;
   }
 
-  function extractSizesFromDom() {
+  function extractSizes() {
     const out = [];
     const seen = new Set();
-    const candidates = document.querySelectorAll(
-      '[class*="size"] button, [class*="size"] li, [data-qa-action="size-in-stock"], [data-qa-action="size-out-of-stock"], .size-selector-sizes-size__button'
-    );
-    candidates.forEach((el) => {
-      const txt = (el.innerText || '').trim().split('\n')[0].trim();
-      if (!txt || txt.length > 8 || seen.has(txt)) return;
-      if (!/^(XXS|XS|S|M|L|XL|XXL|2XL|3XL|[3-4][0-9](\.5)?|STD)$/i.test(txt)) return;
-      seen.add(txt);
-      const cls = (el.className || '').toLowerCase();
-      const disabled = el.hasAttribute('disabled') || cls.includes('out') || cls.includes('disabled') || cls.includes('unavailable') || el.getAttribute('data-qa-action') === 'size-out-of-stock';
-      out.push({ size: txt.toUpperCase(), in_stock: !disabled, variant_id: null, cart_url: location.href });
-    });
-    return out;
+    const selectors = [
+      '[class*="size"] button', '[class*="size"] li', '[data-qa*="size"]',
+      '[class*="beden"] button', '[class*="beden"] li', '.size-selector button',
+      'button[aria-label*="beden" i]', 'button[aria-label*="size" i]',
+      'input[name*="size" i] + label', '.product-detail-size-selector__size-list-item'
+    ];
+    for (const sel of selectors) {
+      document.querySelectorAll(sel).forEach((el) => {
+        const txt = (el.textContent || '').trim().replace(/\s+/g, ' ');
+        if (!txt || txt.length > 14 || seen.has(txt.toUpperCase())) return;
+        if (!/^(XXS|XS|S|M|L|XL|XXL|2XL|3XL|STD|TEK|\d{2}(\.\d)?)$/i.test(txt)) return;
+        seen.add(txt.toUpperCase());
+        const cls = (el.className || '').toString().toLowerCase();
+        const outStock = el.disabled || el.getAttribute('aria-disabled') === 'true' ||
+          /out|sold|disabled|unavail|notify|tuken|yok/.test(cls);
+        out.push({ size: txt.toUpperCase(), in_stock: !outStock, cart_url: null });
+      });
+    }
+    return out.slice(0, 20);
   }
 
-  function extractSingleProduct() {
-    const title = (document.querySelector('h1')?.innerText || document.title || '').trim();
-    const img = document.querySelector('meta[property="og:image"]')?.content || document.querySelector('img[src*="static.zara"], img[src*="bershka"], img[src*="cdn"]')?.src || '';
-    const priceSelectors = [
-      '.money-amount__main',
-      '.current-price-elem',
-      '.classifiedInfo h3',
-      '.prc-dsc',
-      '[data-test-id="price-current-price"]',
-      '.a-price-whole',
-      '.pt_v8',
-      '.product-list__price',
-      '[class*="price"]'
-    ];
+  function extractPageProduct() {
+    const h1 = document.querySelector('h1');
+    const title = (h1?.textContent || document.querySelector('meta[property="og:title"]')?.content || document.title || '').trim();
+    const img = document.querySelector('meta[property="og:image"]')?.content ||
+      document.querySelector('img[src*="http"]')?.src || '';
+
     let price = 0;
-    for (const sel of priceSelectors) {
-      const el = document.querySelector(sel);
-      if (el) {
-        const p = parsePrice(el.innerText);
-        if (p > 5) { price = p; break; }
+    const metaP = document.querySelector('meta[property="product:price:amount"], meta[itemprop="price"]');
+    if (metaP?.content) price = parsePrice(metaP.content);
+
+    if (!price) {
+      const priceSelectors = [
+        '.money-amount__main', '[data-qa-qualifier="price-amount-current"]',
+        '.prc-dsc', '.product-price', '[data-test-id="default-price"]',
+        '.a-price .a-offscreen', '.price-current', '.classifiedInfo h3', '[class*="price" i]'
+      ];
+      for (const sel of priceSelectors) {
+        const el = document.querySelector(sel);
+        if (el) {
+          const p = parsePrice(el.textContent);
+          if (p >= 20 && p < 5000000) { price = p; break; }
+        }
       }
     }
-    const bodyText = document.body.innerText.toLowerCase();
+
+    const storeName = host.split('.')[0].replace(/^./, (c) => c.toUpperCase());
     return {
-      title,
+      title: title.slice(0, 180),
       url: location.href,
       price_try: price,
-      store_name: host,
-      seller_name: host,
+      store_name: storeName,
       image_url: img,
-      folder_id: isCosmeticsSite ? 3 : isFashionSite ? 2 : 1,
-      is_used: isUsedSite,
-      city: 'İstanbul',
-      param_guvende: /param güvende|dolap güvencesi/.test(bodyText),
-      has_invoice_box: /faturalı|fatura|garantili|kutulu/.test(bodyText),
-      photo_count: Math.min(12, document.querySelectorAll('img').length > 8 ? 6 : 3),
-      sizes: isFashionSite ? extractSizesFromDom() : [],
-      quick_checkout_url: location.href
+      is_used: isSecondHand,
+      sizes: extractSizes(),
     };
   }
 
-  function extractCartOrFavoritesBatch() {
-    const path = location.pathname.toLowerCase();
-    if (!/(cart|sepet|basket|fav|wishlist|saved|shop-cart)/.test(path)) return [];
-    const cards = document.querySelectorAll('article, [class*="cart-item"], [class*="wishlist"], [class*="favorite"], [class*="basket-item"], li[class*="product"]');
+  function extractBulkItems() {
     const items = [];
     const seen = new Set();
-    cards.forEach((c) => {
-      const a = c.querySelector('a[href]');
-      const titleEl = c.querySelector('h2, h3, h4, [class*="name"], [class*="title"]');
-      const price = parsePrice(c.innerText);
-      const title = (titleEl?.innerText || a?.innerText || '').trim();
-      if (!title || title.length < 3 || price <= 5 || seen.has(title)) return;
-      seen.add(title);
-      items.push({
-        title: title.slice(0, 120),
-        url: a ? a.href : location.href,
-        price_try: price,
-        store_name: host,
-        seller_name: host,
-        image_url: c.querySelector('img')?.src || '',
-        sizes: [],
-        quick_checkout_url: a ? a.href : location.href
-      });
+    const storeName = host.split('.')[0].replace(/^./, (c) => c.toUpperCase());
+    document.querySelectorAll('a[href]').forEach((a) => {
+      const card = a.closest('article, li, [class*="product" i], [class*="card" i], [class*="item" i]');
+      if (!card) return;
+      const href = a.href;
+      if (!href || seen.has(href) || !href.startsWith('http')) return;
+      const text = (card.textContent || '').replace(/\s+/g, ' ').trim();
+      const priceMatch = text.match(/(\d{1,3}(?:\.\d{3})+(?:,\d{2})?|\d{3,6}(?:,\d{2})?)\s*(?:TL|₺)/i);
+      const price = priceMatch ? parsePrice(priceMatch[1]) : 0;
+      const img = card.querySelector('img')?.src || '';
+      const nameEl = card.querySelector('h2, h3, h4, [class*="name" i], [class*="title" i]');
+      const title = (nameEl?.textContent || a.getAttribute('title') || '').trim();
+      if (title.length < 4 || price <= 0) return;
+      seen.add(href);
+      items.push({ title: title.slice(0, 160), url: href, price_try: price, store_name: storeName, image_url: img });
     });
-    return items.slice(0, 35);
+    return items.slice(0, 40);
   }
 
-  function extractSahibindenSearchBatch() {
-    const rows = document.querySelectorAll('tr.searchResultsItem');
-    const items = [];
-    rows.forEach((tr) => {
-      const a = tr.querySelector('a.classifiedTitle');
-      const pEl = tr.querySelector('td.searchResultsPriceValue');
-      const locEl = tr.querySelector('td.searchResultsLocationValue');
-      if (!a || !pEl) return;
-      const price = parsePrice(pEl.innerText);
-      if (price <= 0) return;
-      const title = a.innerText.trim();
-      const txt = tr.innerText.toLowerCase();
-      items.push({
-        title,
-        price_try: price,
-        city: (locEl?.innerText || 'Türkiye').replace(/\s+/g, ' ').trim(),
-        seller_name: 'Sahibinden Satıcı',
-        param_guvende: /param güvende/.test(txt) || !!tr.querySelector('.param-guvende, [title*="Param Güvende"]'),
-        has_invoice_box: /fatura|garanti|kutulu|sıfır/.test(txt),
-        photo_count: 5,
-        url: a.href
-      });
-    });
-    return items.slice(0, 25);
-  }
-
-  const btn = document.createElement('button');
-  const isCartOrFav = /(cart|sepet|basket|fav|wishlist|saved|shop-cart)/.test(location.pathname.toLowerCase());
-  btn.textContent = isCartOrFav ? '● Sepet/Favorileri Hayye\'ye Aktar' : '● Hayye\'ye At';
-  Object.assign(btn.style, {
-    position: 'fixed',
-    right: '18px',
-    bottom: '18px',
-    zIndex: '2147483647',
-    background: '#0E1012',
-    color: '#F2EFE9',
-    border: '1px solid #10B981',
-    padding: '9px 14px',
-    fontFamily: 'system-ui, sans-serif',
-    fontSize: '12px',
-    fontWeight: '600',
-    cursor: 'pointer',
-    boxShadow: '0 8px 24px rgba(0,0,0,0.45)'
+  // Respond to popup.js requests
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg?.type === 'GET_PAGE_INFO') {
+      sendResponse({ product: extractPageProduct(), isFavOrCart });
+    }
   });
 
-  btn.addEventListener('click', async () => {
-    btn.textContent = 'Gönderiliyor...';
-    try {
-      const usedBatch = host.includes('sahibinden') ? extractSahibindenSearchBatch() : [];
-      const favBatch = isCartOrFav ? extractCartOrFavoritesBatch() : [];
-      if (favBatch.length >= 1) {
-        const res = await fetch(`${BRIDGE}/ingest/bulk-products`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ folder_name: isCosmeticsSite ? 'Kozmetik' : 'Giyim & Inditex', items: favBatch })
-        }).then((r) => r.json());
-        btn.textContent = `✓ ${res.added || favBatch.length} ürün senkronize edildi`;
-      } else if (usedBatch.length >= 2) {
-        const prods = await fetch(`${BRIDGE}/products`).then((r) => r.json());
-        if (!prods.length) {
-          btn.textContent = 'Önce Hayye\'de ürün aç';
-          return;
+  // Build Sleek Editorial Floating Glass Pill (Keepa × Phia style)
+  const pill = document.createElement('div');
+  pill.id = 'hayye-floating-pill';
+  pill.style.cssText = `
+    position: fixed; right: 18px; bottom: 18px; z-index: 2147483647;
+    display: flex; align-items: center; gap: 8px; padding: 7px 10px 7px 8px;
+    border-radius: 999px; background: rgba(14, 16, 20, 0.88);
+    backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.55);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    color: #F5F2EB; font-size: 12px; transition: all 0.2s ease;
+  `;
+
+  const iconUrl = chrome.runtime.getURL('icons/icon32.png');
+  pill.innerHTML = `
+    <img src="${iconUrl}" style="width:24px;height:24px;border-radius:7px;flex-shrink:0" />
+    <span id="hayye-status-txt" style="max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#C7CCD4;font-weight:500">Hayye</span>
+    <button id="hayye-cmp-btn" style="border:1px solid rgba(255,255,255,0.14);background:rgba(255,255,255,0.06);color:#F5F2EB;border-radius:999px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer">Daha Ucuzu?</button>
+    <button id="hayye-save-btn" style="border:none;background:#10B981;color:#090A0C;border-radius:999px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer">${isFavOrCart ? 'Toplu Aktar' : 'Takibe Al'}</button>
+    <button id="hayye-close-btn" style="border:none;background:transparent;color:#8F96A3;font-size:14px;line-height:1;cursor:pointer;padding:0 3px">×</button>
+  `;
+  document.body.appendChild(pill);
+
+  const statusEl = pill.querySelector('#hayye-status-txt');
+  const cmpBtn = pill.querySelector('#hayye-cmp-btn');
+  const saveBtn = pill.querySelector('#hayye-save-btn');
+  pill.querySelector('#hayye-close-btn').onclick = () => pill.remove();
+
+  // Auto-check if product is already tracked in Hayye Market
+  const prod = extractPageProduct();
+  if (prod.title && !isFavOrCart) {
+    fetch(`${BRIDGE}/api/check`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: prod.url, title: prod.title, price_try: prod.price_try }),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.tracked) {
+          const dip = Math.round(d.min_all_try || d.best_new_try).toLocaleString('tr-TR');
+          const color = d.status?.includes('GENUINE') ? '#10B981' : d.status === 'INFLATED_FAKE' ? '#F43F5E' : '#F5F2EB';
+          statusEl.style.color = color;
+          statusEl.textContent = `${d.badge} • Dip: ${dip} ₺`;
+          saveBtn.textContent = 'Güncelle';
         }
-        const pickText = prods.map((p, i) => `${i + 1}) ${p.title}`).join('\n');
-        const ans = prompt(`${usedBatch.length} adet 2. el ilan bulundu. Hangi ürüne eklensin?\n${pickText}`, '1');
-        const idx = parseInt(ans || '1', 10) - 1;
-        const target = prods[idx] || prods[0];
-        const res = await fetch(`${BRIDGE}/ingest/used-batch`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ product_id: target.id, platform: 'Sahibinden', listings: usedBatch })
-        }).then((r) => r.json());
-        btn.textContent = `✓ ${res.added || usedBatch.length} 2. el ilan aktarıldı`;
+      })
+      .catch(() => {});
+  }
+
+  // Cross-store cheaper price lookup
+  cmpBtn.onclick = async () => {
+    const cur = extractPageProduct();
+    if (!cur.title) return;
+    cmpBtn.textContent = 'Arıyor...';
+    try {
+      const r = await fetch(`${BRIDGE}/api/compare`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: cur.title, current_price_try: cur.price_try }),
+      });
+      const d = await r.json();
+      if (d.cheaper) {
+        const diff = cur.price_try > d.cheaper.price_try
+          ? `${Math.round(cur.price_try - d.cheaper.price_try).toLocaleString('tr-TR')} ₺ ucuz`
+          : `${Math.round(d.cheaper.price_try).toLocaleString('tr-TR')} ₺`;
+        statusEl.style.color = '#10B981';
+        statusEl.innerHTML = `<a href="${d.cheaper.url}" target="_blank" style="color:#10B981;text-decoration:underline">${d.cheaper.store_name}: ${diff} ↗</a>`;
+        cmpBtn.textContent = 'Bulundu ✓';
       } else {
-        const item = extractSingleProduct();
-        await fetch(`${BRIDGE}/ingest/product`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(item)
-        });
-        btn.textContent = '✓ Hayye\'ye Eklendi';
+        statusEl.textContent = 'En iyi fiyat burada görünüyor';
+        cmpBtn.textContent = 'En İyi ✓';
       }
     } catch {
-      btn.textContent = 'Hayye kapalı (47821)';
+      statusEl.textContent = 'Hayye uygulaması kapalı';
+      cmpBtn.textContent = 'Daha Ucuzu?';
     }
-    setTimeout(() => {
-      btn.textContent = isCartOrFav ? '● Sepet/Favorileri Hayye\'ye Aktar' : '● Hayye\'ye At';
-    }, 2600);
-  });
+  };
 
-  document.body.appendChild(btn);
+  // Save product or bulk wishlist
+  saveBtn.onclick = async () => {
+    saveBtn.textContent = '...';
+    try {
+      if (isFavOrCart) {
+        const items = extractBulkItems();
+        const r = await fetch(`${BRIDGE}/ingest/bulk-products`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ folder_name: 'Giyim & Inditex', items }),
+        });
+        const d = await r.json();
+        statusEl.style.color = '#10B981';
+        statusEl.textContent = `${d.added || 0} ürün aktarıldı`;
+        saveBtn.textContent = 'Aktarıldı ✓';
+      } else {
+        const item = extractPageProduct();
+        const r = await fetch(`${BRIDGE}/ingest/product`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(item),
+        });
+        const d = await r.json();
+        if (d.ok) {
+          statusEl.style.color = '#10B981';
+          statusEl.textContent = 'Hayye koleksiyonuna eklendi';
+          saveBtn.textContent = 'Kaydedildi ✓';
+        }
+      }
+    } catch {
+      statusEl.style.color = '#F43F5E';
+      statusEl.textContent = 'Hayye PC uygulaması açık değil';
+      saveBtn.textContent = 'Tekrar Dene';
+    }
+  };
 })();

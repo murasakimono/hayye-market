@@ -1,10 +1,13 @@
 use crate::db;
 use crate::models::{AddManualUsedRequest, BridgeBulkProducts, BridgeIngestProduct, BridgeUsedBatch};
 use crate::scraper_engine;
+use rusqlite::params;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
 pub const BRIDGE_PORT: u16 = 47821;
+
+const ICON_PNG: &[u8] = include_bytes!("../icons/128x128.png");
 
 const IOS_PWA_HTML: &str = r##"<!doctype html>
 <html lang="tr">
@@ -14,78 +17,226 @@ const IOS_PWA_HTML: &str = r##"<!doctype html>
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Hayye Market" />
-  <meta name="theme-color" content="#0E1012" />
+  <meta name="theme-color" content="#090A0C" />
   <link rel="manifest" href="/manifest.webmanifest" />
-  <link rel="apple-touch-icon" href="/icon.svg" />
-  <title>Hayye Market — Mobil</title>
+  <link rel="apple-touch-icon" href="/icon.png" />
+  <title>Hayye Market</title>
   <style>
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-    html, body { width: 100%; max-width: 100%; overflow-x: hidden; margin: 0; background: #0E1012; color: #F2EFE9; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif; padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
-    header { position: sticky; top: 0; width: 100%; background: #0B0D0F; border-bottom: 1px solid #242930; padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; gap: 10px; z-index: 10; }
-    .brand { font-weight: 700; font-size: 16px; letter-spacing: 0.02em; display: flex; align-items: center; gap: 8px; min-width: 0; }
-    .dot { width: 8px; height: 8px; border-radius: 50%; background: #10B981; flex-shrink: 0; }
-    .wrap { width: 100%; padding: 14px 16px 80px; max-width: 720px; margin: 0 auto; }
+    html, body {
+      width: 100%; max-width: 100%; overflow-x: hidden; margin: 0;
+      background: #090A0C; color: #F5F2EB;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+      padding: env(safe-area-inset-top) 0 calc(84px + env(safe-area-inset-bottom));
+    }
+    header {
+      position: sticky; top: 0; width: 100%; z-index: 20;
+      background: rgba(9, 10, 12, 0.85); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    }
+    .brand { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 16px; letter-spacing: -0.01em; }
+    .brand img { width: 28px; height: 28px; border-radius: 8px; }
+    .who-pill {
+      display: flex; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.09);
+      border-radius: 999px; padding: 2px; gap: 2px;
+    }
+    .who-btn {
+      border: none; background: transparent; color: #8F96A3; font-size: 11px; font-weight: 600;
+      padding: 5px 10px; border-radius: 999px; cursor: pointer;
+    }
+    .who-btn.active { background: #F5F2EB; color: #090A0C; }
+    .wrap { width: 100%; max-width: 640px; margin: 0 auto; padding: 14px 16px; }
     .add-box { display: flex; gap: 8px; margin-bottom: 14px; width: 100%; }
-    input { flex: 1; min-width: 0; width: 100%; background: #14171A; border: 1px solid #323942; color: #F2EFE9; padding: 11px 12px; font-size: 14px; border-radius: 0; }
-    button { flex-shrink: 0; background: #10B981; color: #0E1012; border: none; padding: 11px 14px; font-weight: 700; font-size: 13px; cursor: pointer; white-space: nowrap; }
-    .card { background: #14171A; border: 1px solid #242930; padding: 13px; margin-bottom: 10px; }
-    .row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
-    .title { font-size: 14px; font-weight: 600; line-height: 1.35; }
-    .price { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 17px; font-weight: 700; color: #10B981; white-space: nowrap; }
-    .meta { font-size: 11px; color: #9AA2AC; margin-top: 6px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-    .badge { padding: 2px 6px; border: 1px solid #323942; font-family: ui-monospace, monospace; font-size: 10px; }
-    .dip { border-color: #10B981; color: #10B981; }
-    .fake { border-color: #F43F5E; color: #F43F5E; }
-    .used { color: #3B82F6; }
-    .sizes { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 5px; }
-    .sz { font-family: ui-monospace, monospace; font-size: 10px; padding: 2px 6px; border: 1px solid #323942; }
-    .sz.in { border-color: #10B981; color: #10B981; }
-    .sz.out { color: #656E78; text-decoration: line-through; }
-    .actions { margin-top: 10px; display: flex; gap: 8px; }
-    .a-btn { text-decoration: none; font-size: 12px; font-weight: 600; padding: 7px 10px; border: 1px solid #323942; color: #F2EFE9; }
-    .a-btn.sniper { background: #10B981; color: #0E1012; border-color: #10B981; }
-    #msg { font-size: 12px; color: #10B981; margin-bottom: 10px; }
+    input {
+      flex: 1; min-width: 0; width: 100%; background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.09); color: #F5F2EB;
+      padding: 11px 14px; font-size: 14px; border-radius: 999px; outline: none;
+    }
+    input:focus { border-color: #10B981; }
+    .add-btn {
+      flex-shrink: 0; background: #F5F2EB; color: #090A0C; border: none;
+      padding: 11px 16px; font-weight: 700; font-size: 13px; border-radius: 999px; cursor: pointer;
+    }
+    #msg { font-size: 12px; color: #10B981; margin-bottom: 10px; min-height: 16px; }
+    .card {
+      background: #111317; border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 22px; overflow: hidden; margin-bottom: 14px;
+    }
+    .hero { position: relative; aspect-ratio: 16/10; background: #181C23; overflow: hidden; }
+    .hero img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .hero-grad { position: absolute; inset: 0; background: linear-gradient(to top, #111317 4%, transparent 55%, rgba(0,0,0,0.4)); }
+    .pill-top { position: absolute; top: 10px; left: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
+    .badge {
+      padding: 4px 10px; border-radius: 999px; font-size: 10px; font-weight: 700;
+      background: rgba(0,0,0,0.55); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.12);
+    }
+    .badge.dip { background: rgba(16,185,129,0.22); color: #10B981; border-color: rgba(16,185,129,0.45); }
+    .badge.fake { background: rgba(244,63,94,0.22); color: #F43F5E; border-color: rgba(244,63,94,0.45); }
+    .price-ov {
+      position: absolute; bottom: 10px; left: 14px; right: 14px;
+      display: flex; justify-content: space-between; align-items: flex-end; gap: 8px;
+    }
+    .price { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 21px; font-weight: 700; color: #F5F2EB; }
+    .used-pill {
+      font-family: ui-monospace, monospace; font-size: 11px; font-weight: 600;
+      padding: 4px 9px; border-radius: 999px; background: rgba(59,130,246,0.22); color: #60A5FA;
+    }
+    .body { padding: 14px; }
+    .title { font-size: 14px; font-weight: 600; line-height: 1.38; color: #F5F2EB; }
+    .meta { font-size: 11px; color: #8F96A3; margin-top: 6px; display: flex; flex-wrap: wrap; gap: 8px; }
+    .sizes { margin-top: 9px; display: flex; flex-wrap: wrap; gap: 5px; }
+    .sz { font-family: ui-monospace, monospace; font-size: 10px; padding: 3px 8px; border-radius: 999px; }
+    .sz.in { background: rgba(16,185,129,0.16); color: #10B981; }
+    .sz.out { background: rgba(255,255,255,0.04); color: #606774; text-decoration: line-through; }
+    .votes {
+      margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.06);
+      display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+    }
+    .v-btns { display: flex; gap: 6px; }
+    .v-btn {
+      border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04); color: #9AA2AC;
+      border-radius: 999px; padding: 5px 11px; font-size: 11px; font-weight: 600; cursor: pointer;
+    }
+    .v-btn.buy { background: rgba(16,185,129,0.22); color: #10B981; border-color: rgba(16,185,129,0.45); }
+    .v-btn.wait { background: rgba(251,191,36,0.18); color: #FCD34D; border-color: rgba(251,191,36,0.4); }
+    .v-btn.pass { background: rgba(244,63,94,0.18); color: #F43F5E; border-color: rgba(244,63,94,0.4); }
+    .actions { margin-top: 11px; display: flex; gap: 8px; }
+    .a-btn {
+      flex: 1; text-align: center; text-decoration: none; font-size: 12px; font-weight: 600;
+      padding: 10px 12px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.1); color: #F5F2EB;
+      background: rgba(255,255,255,0.05); cursor: pointer;
+    }
+    .a-btn.sniper { background: #10B981; color: #090A0C; border-color: #10B981; font-weight: 700; }
+    .dock {
+      position: fixed; left: 50%; transform: translateX(-50%);
+      bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 30;
+      display: flex; gap: 4px; padding: 5px; border-radius: 999px;
+      background: rgba(17, 19, 23, 0.88); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255,255,255,0.12); box-shadow: 0 12px 32px rgba(0,0,0,0.6);
+    }
+    .d-btn {
+      border: none; background: transparent; color: #8F96A3; font-size: 12px; font-weight: 600;
+      padding: 8px 14px; border-radius: 999px; cursor: pointer; white-space: nowrap;
+    }
+    .d-btn.active { background: #F5F2EB; color: #090A0C; }
   </style>
 </head>
 <body>
   <header>
-    <div class="brand"><span class="dot"></span> Hayye Market</div>
-    <button onclick="load()" style="padding:6px 10px;font-size:11px;background:#1A1E23;color:#F2EFE9;border:1px solid #323942">Yenile</button>
+    <div class="brand"><img src="/icon.png" alt="H" /> Hayye Market</div>
+    <div class="who-pill">
+      <button id="who-m" class="who-btn" onclick="setWho('metehan')">Metehan</button>
+      <button id="who-i" class="who-btn" onclick="setWho('ilayda')">İlayda</button>
+    </div>
   </header>
   <div class="wrap">
     <form class="add-box" onsubmit="addUrl(event)">
-      <input id="u" placeholder="Zara, Flaw, Trendyol, Amazon linki yapıştır..." />
-      <button type="submit">Ekle</button>
+      <input id="u" placeholder="Zara, Flaw, Trendyol, Amazon linki..." />
+      <button class="add-btn" type="submit">Ekle</button>
     </form>
     <div id="msg"></div>
     <div id="list">Yükleniyor...</div>
   </div>
+  <nav class="dock">
+    <button id="t-gallery" class="d-btn active" onclick="setTab('gallery')">Galeri</button>
+    <button id="t-radar" class="d-btn" onclick="setTab('radar')">Radar</button>
+    <button id="t-shared" class="d-btn" onclick="setTab('shared')">Ortak</button>
+    <button id="t-orders" class="d-btn" onclick="setTab('orders')">Sipariş</button>
+  </nav>
   <script>
     const fmt = v => Math.round(v).toLocaleString('tr-TR') + ' ₺';
-    async function load() {
-      const r = await fetch('/api/products');
-      const items = await r.json();
+    let who = localStorage.getItem('hayye_who') || 'metehan';
+    let tab = 'gallery';
+    let cache = [];
+
+    function syncWhoUI() {
+      document.getElementById('who-m').className = 'who-btn' + (who === 'metehan' ? ' active' : '');
+      document.getElementById('who-i').className = 'who-btn' + (who === 'ilayda' ? ' active' : '');
+    }
+    function setWho(w) { who = w; localStorage.setItem('hayye_who', w); syncWhoUI(); render(); }
+    function setTab(t) {
+      tab = t;
+      ['gallery','radar','shared','orders'].forEach(x => {
+        document.getElementById('t-' + x).className = 'd-btn' + (x === t ? ' active' : '');
+      });
+      render();
+    }
+
+    async function vote(pid, v) {
+      await fetch('/api/vote', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ product_id: pid, who, vote: v })
+      });
+      await load();
+    }
+    async function toggleBuy(pid, price, already) {
+      await fetch('/api/purchase', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ product_id: pid, price_try: already ? null : price })
+      });
+      await load();
+    }
+
+    function render() {
+      let items = cache;
+      if (tab === 'radar') {
+        items = cache.filter(p => p.discount_verdict.status.includes('GENUINE') || (p.best_used_try && p.best_used_try <= p.best_new_try * 0.8));
+      } else if (tab === 'orders') {
+        items = cache.filter(p => p.purchased_price_try !== null);
+      }
       const el = document.getElementById('list');
-      if (!items.length) { el.innerHTML = '<div class="card">Henüz ürün yok. Yukarıya link yapıştır.</div>'; return; }
+      if (!items.length) {
+        el.innerHTML = '<div class="card"><div class="body" style="text-align:center;color:#8F96A3">Bu görünümde henüz ürün yok.</div></div>';
+        return;
+      }
       el.innerHTML = items.map(p => {
         const cls = p.discount_verdict.status.includes('GENUINE') ? 'dip' : p.discount_verdict.status === 'INFLATED_FAKE' ? 'fake' : '';
-        const szHtml = (p.sizes || []).slice(0, 8).map(s => `<span class="sz ${s.in_stock ? 'in' : 'out'}">${s.size}</span>`).join('');
+        const szHtml = (p.sizes || []).slice(0, 7).map(s => `<span class="sz ${s.in_stock ? 'in' : 'out'}">${s.size}</span>`).join('');
         const buyUrl = p.quick_checkout_url || p.primary_url;
+        const myVote = who === 'ilayda' ? p.vote_ilayda : p.vote_metehan;
+        const otherVote = who === 'ilayda' ? p.vote_metehan : p.vote_ilayda;
+        const otherName = who === 'ilayda' ? 'Metehan' : 'İlayda';
+        const vTxt = v => v === 'buy' ? 'Al ✓' : v === 'wait' ? 'Bekle' : v === 'pass' ? 'Pas' : '—';
+        const isBought = p.purchased_price_try !== null;
         return `<div class="card">
-          <div class="row"><div class="title">${p.title}</div><div class="price">${fmt(p.best_new_try)}</div></div>
-          <div class="meta">
-            <span class="badge ${cls}">${p.discount_verdict.badge}</span>
-            <span>Güven %${p.avg_trust_score}</span>
-            ${p.best_used_try ? `<span class="used">2. El ${fmt(p.best_used_try)}</span>` : ''}
-            ${p.unit_price ? `<span>10${p.unit_price.unit}: ${p.unit_price.price_per_10_try}₺</span>` : ''}
-          </div>
-          ${szHtml ? `<div class="sizes">${szHtml}</div>` : ''}
-          <div class="actions">
-            <a class="a-btn sniper" href="${buyUrl}" target="_blank">⚡ Hızlı Alım / Sepet</a>
-            <a class="a-btn" href="${p.primary_url}" target="_blank">Ürüne Git ↗</a>
+          ${p.image_url ? `<div class="hero"><img src="${p.image_url}" alt="" /><div class="hero-grad"></div>
+            <div class="pill-top"><span class="badge ${cls}">${p.discount_verdict.badge}</span>
+              ${p.vote_metehan === 'buy' && p.vote_ilayda === 'buy' ? '<span class="badge dip">İKİMİZ DE AL ✓</span>' : ''}
+            </div>
+            <div class="price-ov"><div class="price">${fmt(p.best_new_try)}</div>
+              ${p.best_used_try ? `<span class="used-pill">2. El ${fmt(p.best_used_try)}</span>` : ''}
+            </div></div>` : ''}
+          <div class="body">
+            <div class="title">${p.title}</div>
+            <div class="meta">
+              <span>${p.folder_name}</span>
+              <span>Güven %${p.avg_trust_score}</span>
+              ${p.unit_price ? `<span>10${p.unit_price.unit}: ${p.unit_price.price_per_10_try}₺</span>` : ''}
+              ${!p.image_url ? `<strong style="color:#10B981">${fmt(p.best_new_try)}</strong>` : ''}
+            </div>
+            ${szHtml ? `<div class="sizes">${szHtml}</div>` : ''}
+            <div class="votes">
+              <div class="v-btns">
+                <button class="v-btn ${myVote==='buy'?'buy':''}" onclick="vote(${p.id}, '${myVote==='buy'?'':'buy'}')">Al</button>
+                <button class="v-btn ${myVote==='wait'?'wait':''}" onclick="vote(${p.id}, '${myVote==='wait'?'':'wait'}')">Bekle</button>
+                <button class="v-btn ${myVote==='pass'?'pass':''}" onclick="vote(${p.id}, '${myVote==='pass'?'':'pass'}')">Pas</button>
+              </div>
+              <span style="font-size:11px;color:#8F96A3">${otherName}: ${vTxt(otherVote)}</span>
+            </div>
+            <div class="actions">
+              <a class="a-btn sniper" href="${buyUrl}" target="_blank">⚡ Hızlı Alım</a>
+              <button class="a-btn" onclick="toggleBuy(${p.id}, ${p.best_new_try}, ${isBought})">${isBought ? '14 Gün Korumada ✓' : 'Aldım'}</button>
+            </div>
           </div>
         </div>`;
       }).join('');
+    }
+
+    async function load() {
+      const r = await fetch('/api/products');
+      cache = await r.json();
+      render();
     }
     async function addUrl(e) {
       e.preventDefault();
@@ -95,10 +246,11 @@ const IOS_PWA_HTML: &str = r##"<!doctype html>
       document.getElementById('msg').textContent = 'Taranıyor...';
       const r = await fetch('/ios-share', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ url }) });
       const d = await r.json();
-      document.getElementById('msg').textContent = d.ok ? '✓ Takibe alındı!' : (d.error || 'Hata');
+      document.getElementById('msg').textContent = d.ok ? '✓ Koleksiyona eklendi!' : (d.error || 'Hata');
       inp.value = '';
       load();
     }
+    syncWhoUI();
     load();
   </script>
 </body>
@@ -109,12 +261,10 @@ const MANIFEST_JSON: &str = r##"{
   "short_name": "Hayye",
   "start_url": "/app",
   "display": "standalone",
-  "background_color": "#0E1012",
-  "theme_color": "#0E1012",
-  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+  "background_color": "#090A0C",
+  "theme_color": "#090A0C",
+  "icons": [{ "src": "/icon.png", "sizes": "128x128", "type": "image/png" }]
 }"##;
-
-const ICON_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect width="128" height="128" rx="28" fill="#0E1012"/><rect x="28" y="28" width="12" height="72" rx="3" fill="#F2EFE9"/><rect x="88" y="28" width="12" height="72" rx="3" fill="#F2EFE9"/><path d="M34 66 L52 66 L63 82 L78 46 L94 60" fill="none" stroke="#10B981" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg>"##;
 
 pub fn spawn_bridge_server() {
     tauri::async_runtime::spawn(async move {
@@ -149,16 +299,24 @@ pub fn spawn_bridge_server() {
                     .trim_matches('\0')
                     .trim();
 
+                if method == "GET" && (path == "/icon.png" || path == "/icon.svg") {
+                    let header = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nCache-Control: public, max-age=86400\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        ICON_PNG.len()
+                    );
+                    let _ = stream.write_all(header.as_bytes()).await;
+                    let _ = stream.write_all(ICON_PNG).await;
+                    return;
+                }
+
                 let (status, ctype, body) = if method == "OPTIONS" {
                     ("204 No Content", "text/plain", String::new())
                 } else if method == "GET" && (path == "/" || path == "/app") {
                     ("200 OK", "text/html; charset=utf-8", IOS_PWA_HTML.to_string())
                 } else if method == "GET" && path == "/manifest.webmanifest" {
                     ("200 OK", "application/manifest+json", MANIFEST_JSON.to_string())
-                } else if method == "GET" && path == "/icon.svg" {
-                    ("200 OK", "image/svg+xml", ICON_SVG.to_string())
                 } else if method == "GET" && path == "/ping" {
-                    ("200 OK", "application/json", r#"{"ok":true,"app":"Hayye Market","version":"1.1.1"}"#.to_string())
+                    ("200 OK", "application/json", r#"{"ok":true,"app":"Hayye Market","version":"2.0.0"}"#.to_string())
                 } else if method == "GET" && path == "/api/products" {
                     match db::open_db().and_then(|c| db::list_products(&c)) {
                         Ok(list) => ("200 OK", "application/json", serde_json::to_string(&list).unwrap_or_else(|_| "[]".into())),
@@ -174,6 +332,81 @@ pub fn spawn_bridge_server() {
                             ("200 OK", "application/json", serde_json::to_string(&slim).unwrap_or_else(|_| "[]".into()))
                         }
                         Err(e) => ("500 Internal Server Error", "application/json", format!(r#"{{"error":"{}"}}"#, e)),
+                    }
+                } else if method == "POST" && path == "/api/vote" {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(body_str) {
+                        let pid = v["product_id"].as_i64().unwrap_or(0);
+                        let who = v["who"].as_str().unwrap_or("metehan");
+                        let vote = v["vote"].as_str().unwrap_or("");
+                        let note = v["note"].as_str();
+                        match db::open_db().and_then(|c| db::set_product_vote(&c, pid, who, vote, note)) {
+                            Ok(_) => ("200 OK", "application/json", r#"{"ok":true}"#.to_string()),
+                            Err(e) => ("500 Internal Server Error", "application/json", format!(r#"{{"error":"{}"}}"#, e)),
+                        }
+                    } else {
+                        ("400 Bad Request", "application/json", r#"{"error":"Geçersiz JSON"}"#.to_string())
+                    }
+                } else if method == "POST" && path == "/api/purchase" {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(body_str) {
+                        let pid = v["product_id"].as_i64().unwrap_or(0);
+                        let price = v["price_try"].as_f64();
+                        match db::open_db().and_then(|c| db::mark_purchased(&c, pid, price)) {
+                            Ok(_) => ("200 OK", "application/json", r#"{"ok":true}"#.to_string()),
+                            Err(e) => ("500 Internal Server Error", "application/json", format!(r#"{{"error":"{}"}}"#, e)),
+                        }
+                    } else {
+                        ("400 Bad Request", "application/json", r#"{"error":"Geçersiz JSON"}"#.to_string())
+                    }
+                } else if method == "POST" && path == "/api/check" {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(body_str) {
+                        let url = v["url"].as_str().unwrap_or("").trim();
+                        let title = v["title"].as_str().unwrap_or("").trim().to_lowercase();
+                        let res = db::open_db().and_then(|c| db::list_products(&c));
+                        match res {
+                            Ok(list) => {
+                                let found = list.into_iter().find(|p| {
+                                    (!url.is_empty() && (p.primary_url == url || p.offers.iter().any(|o| o.url == url)))
+                                        || (!title.is_empty() && title.len() > 8 && p.title.to_lowercase().contains(&title[..title.len().min(22)]))
+                                });
+                                if let Some(p) = found {
+                                    let j = serde_json::json!({
+                                        "tracked": true,
+                                        "product_id": p.id,
+                                        "best_new_try": p.best_new_try,
+                                        "min_all_try": p.discount_verdict.min_all_try,
+                                        "avg_30d_try": p.discount_verdict.avg_30d_try,
+                                        "badge": p.discount_verdict.badge,
+                                        "status": p.discount_verdict.status,
+                                        "tracked_sizes": p.tracked_sizes,
+                                    });
+                                    ("200 OK", "application/json", j.to_string())
+                                } else {
+                                    ("200 OK", "application/json", r#"{"tracked":false}"#.to_string())
+                                }
+                            }
+                            Err(_) => ("200 OK", "application/json", r#"{"tracked":false}"#.to_string()),
+                        }
+                    } else {
+                        ("400 Bad Request", "application/json", r#"{"error":"Geçersiz JSON"}"#.to_string())
+                    }
+                } else if method == "POST" && path == "/api/compare" {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(body_str) {
+                        let title = v["title"].as_str().unwrap_or("").trim();
+                        let current = v["current_price_try"].as_f64().unwrap_or(0.0);
+                        let clean_q: String = title.split_whitespace().take(5).collect::<Vec<_>>().join(" ");
+                        if clean_q.len() < 3 {
+                            ("200 OK", "application/json", r#"{"cheaper":null}"#.to_string())
+                        } else {
+                            let cands = crate::search_live_tr(clean_q).await;
+                            let cheaper = cands
+                                .into_iter()
+                                .filter(|c| c.price_try > 0.0 && (current <= 0.0 || c.price_try < current * 0.96))
+                                .min_by(|a, b| a.price_try.partial_cmp(&b.price_try).unwrap_or(std::cmp::Ordering::Equal));
+                            let j = serde_json::json!({ "cheaper": cheaper });
+                            ("200 OK", "application/json", j.to_string())
+                        }
+                    } else {
+                        ("400 Bad Request", "application/json", r#"{"error":"Geçersiz JSON"}"#.to_string())
                     }
                 } else if method == "POST" && path == "/ios-share" {
                     if let Ok(v) = serde_json::from_str::<serde_json::Value>(body_str) {
@@ -230,6 +463,12 @@ pub fn spawn_bridge_server() {
                                     let _ = db::update_product_sizes(&conn, pid, sz, item.quick_checkout_url.as_deref());
                                 } else if item.quick_checkout_url.is_some() {
                                     let _ = db::update_product_sizes(&conn, pid, &[], item.quick_checkout_url.as_deref());
+                                }
+                                if let Some(ts) = item.tracked_sizes.as_deref().filter(|s| !s.trim().is_empty()) {
+                                    let _ = conn.execute("UPDATE products SET tracked_sizes = ?1 WHERE id = ?2", params![ts.trim(), pid]);
+                                }
+                                if let Some(tp) = item.target_price_try.filter(|v| *v > 0.0) {
+                                    let _ = conn.execute("UPDATE products SET target_price_try = ?1 WHERE id = ?2", params![tp, pid]);
                                 }
                                 if item.is_used.unwrap_or(false) {
                                     let _ = db::add_used_listing(

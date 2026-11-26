@@ -335,6 +335,24 @@ fn set_tracked_sizes(product_id: i64, tracked_sizes: String) -> Result<(), Strin
 }
 
 #[tauri::command]
+fn set_product_vote(product_id: i64, who: String, vote: String, note: Option<String>) -> Result<(), String> {
+    let conn = db::open_db()?;
+    db::set_product_vote(&conn, product_id, &who, &vote, note.as_deref())
+}
+
+#[tauri::command]
+fn mark_purchased(product_id: i64, price_try: Option<f64>) -> Result<(), String> {
+    let conn = db::open_db()?;
+    db::mark_purchased(&conn, product_id, price_try)
+}
+
+#[tauri::command]
+fn freeze_price_snapshots() -> Result<usize, String> {
+    let conn = db::open_db()?;
+    db::freeze_price_snapshots(&conn)
+}
+
+#[tauri::command]
 fn get_saved_total() -> Result<f64, String> {
     let conn = db::open_db()?;
     Ok(db::get_saved_total(&conn))
@@ -448,6 +466,9 @@ pub fn run() {
             refresh_product,
             set_target_price,
             set_tracked_sizes,
+            set_product_vote,
+            mark_purchased,
+            freeze_price_snapshots,
             get_saved_total,
             record_savings,
             get_mobile_access_info,

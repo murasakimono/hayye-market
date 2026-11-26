@@ -1,10 +1,10 @@
 <div align="center">
-  <img src="public/hayye-logo.svg" width="96" height="96" alt="Hayye Market Logo" />
+  <img src="public/hayye-icon.png" width="104" height="104" alt="Hayye Market Logo" style="border-radius:24px" />
   <h1>HAYYE MARKET</h1>
-  <p><strong>Türkiye'nin Evrensel Fiyat, Stok, Moda/Kozmetik &amp; 2. El İlan İstihbarat Terminali</strong></p>
+  <p><strong>Editorial Lookbook Dark — Evrensel Fiyat, Stok, Moda/Kozmetik &amp; 2. El İlan İstihbaratı</strong></p>
   <p>
-    <img src="https://img.shields.io/badge/version-1.1.1-10B981?style=flat-square" alt="Version 1.1.1" />
-    <img src="https://img.shields.io/badge/stack-Tauri%20v2%20%2B%20Rust%20%2B%20SQLite-0E1012?style=flat-square" alt="Tauri v2 + Rust" />
+    <img src="https://img.shields.io/badge/version-2.0.0-10B981?style=flat-square" alt="Version 2.0.0" />
+    <img src="https://img.shields.io/badge/stack-Tauri%20v2%20%2B%20Rust%20%2B%20SQLite-090A0C?style=flat-square" alt="Tauri v2 + Rust" />
     <img src="https://img.shields.io/badge/platform-Windows%20%2B%20Brave%20%2B%20iOS%20PWA-3B82F6?style=flat-square" alt="Windows + Brave + iOS PWA" />
   </p>
 </div>

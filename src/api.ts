@@ -35,6 +35,11 @@ export const api = {
     invoke<void>('set_target_price', { productId, targetPriceTry }),
   setTrackedSizes: (productId: number, trackedSizes: string) =>
     invoke<void>('set_tracked_sizes', { productId, trackedSizes }),
+  setProductVote: (productId: number, who: 'metehan' | 'ilayda', vote: string, note?: string) =>
+    invoke<void>('set_product_vote', { productId, who, vote, note: note ?? null }),
+  markPurchased: (productId: number, priceTry: number | null) =>
+    invoke<void>('mark_purchased', { productId, priceTry }),
+  freezePriceSnapshots: () => invoke<number>('freeze_price_snapshots'),
   getSavedTotal: () => invoke<number>('get_saved_total'),
   recordSavings: (deltaTry: number) => invoke<number>('record_savings', { deltaTry }),
   getMobileAccessInfo: () => invoke<MobileAccessInfo>('get_mobile_access_info'),

@@ -24,7 +24,7 @@ export const PriceChart: React.FC<PriceChartProps> = ({
 
   if (series.length === 0) {
     return (
-      <div className="h-44 border border-[#242930] bg-[#0E1012] flex items-center justify-center text-xs text-[#656E78]">
+      <div className="h-44 rounded-2xl border border-white/[0.06] bg-[#090A0C]/60 flex items-center justify-center text-xs text-[#8F96A3]">
         Fiyat geçmişi ilk taramalarla oluşuyor
       </div>
     );

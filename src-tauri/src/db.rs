@@ -79,10 +79,18 @@ fn init_schema(conn: &Connection) -> Result<(), String> {
     )
     .map_err(|e| e.to_string())?;
 
-    // Safe migrations for v1.1 columns
+    // Safe migrations for v1.1 & v2.0 columns
     let _ = conn.execute("ALTER TABLE products ADD COLUMN tracked_sizes TEXT NOT NULL DEFAULT ''", []);
     let _ = conn.execute("ALTER TABLE products ADD COLUMN sizes_json TEXT NOT NULL DEFAULT '[]'", []);
     let _ = conn.execute("ALTER TABLE products ADD COLUMN quick_checkout_url TEXT", []);
+    let _ = conn.execute("ALTER TABLE products ADD COLUMN vote_metehan TEXT NOT NULL DEFAULT ''", []);
+    let _ = conn.execute("ALTER TABLE products ADD COLUMN vote_ilayda TEXT NOT NULL DEFAULT ''", []);
+    let _ = conn.execute("ALTER TABLE products ADD COLUMN shared_note TEXT NOT NULL DEFAULT ''", []);
+    let _ = conn.execute("ALTER TABLE products ADD COLUMN added_by TEXT NOT NULL DEFAULT 'Metehan'", []);
+    let _ = conn.execute("ALTER TABLE products ADD COLUMN purchased_price_try REAL", []);
+    let _ = conn.execute("ALTER TABLE products ADD COLUMN purchased_at TEXT", []);
+    let _ = conn.execute("ALTER TABLE products ADD COLUMN snapshot_price_try REAL", []);
+    let _ = conn.execute("ALTER TABLE products ADD COLUMN snapshot_at TEXT", []);
 
     // Seed default folders
     for name in ["Genel", "Giyim & Inditex", "Kozmetik", "Yeni PC Toplama", "Mutfak Çeyiz", "2. El Avı"] {
@@ -336,34 +344,69 @@ pub fn compute_discount_verdict(current_best: f64, history: &[PricePoint]) -> Di
 pub fn list_products(conn: &Connection) -> Result<Vec<ProductDetail>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT p.id, p.folder_id, COALESCE(f.name, 'Genel'), p.title, p.image_url, p.primary_url, p.target_price_try, p.updated_at, COALESCE(p.tracked_sizes, ''), COALESCE(p.sizes_json, '[]'), p.quick_checkout_url
+            "SELECT p.id, p.folder_id, COALESCE(f.name, 'Genel'), p.title, p.image_url, p.primary_url, p.target_price_try, p.updated_at, COALESCE(p.tracked_sizes, ''), COALESCE(p.sizes_json, '[]'), p.quick_checkout_url, COALESCE(p.vote_metehan, ''), COALESCE(p.vote_ilayda, ''), COALESCE(p.shared_note, ''), COALESCE(p.added_by, 'Metehan'), p.purchased_price_try, p.purchased_at, p.snapshot_price_try, p.snapshot_at
              FROM products p LEFT JOIN folders f ON p.folder_id = f.id
              ORDER BY p.id DESC",
         )
         .map_err(|e| e.to_string())?;
 
-    let rows: Vec<(i64, i64, String, String, String, String, Option<f64>, String, String, String, Option<String>)> = stmt
+    struct RawProdRow {
+        id: i64,
+        folder_id: i64,
+        folder_name: String,
+        title: String,
+        image_url: String,
+        primary_url: String,
+        target_price_try: Option<f64>,
+        updated_at: String,
+        tracked_sizes: String,
+        sizes_json: String,
+        quick_checkout_url: Option<String>,
+        vote_metehan: String,
+        vote_ilayda: String,
+        shared_note: String,
+        added_by: String,
+        purchased_price_try: Option<f64>,
+        purchased_at: Option<String>,
+        snapshot_price_try: Option<f64>,
+        snapshot_at: Option<String>,
+    }
+
+    let rows: Vec<RawProdRow> = stmt
         .query_map([], |r| {
-            Ok((
-                r.get(0)?,
-                r.get(1)?,
-                r.get(2)?,
-                r.get(3)?,
-                r.get(4)?,
-                r.get(5)?,
-                r.get(6)?,
-                r.get(7)?,
-                r.get(8)?,
-                r.get(9)?,
-                r.get(10)?,
-            ))
+            Ok(RawProdRow {
+                id: r.get(0)?,
+                folder_id: r.get(1)?,
+                folder_name: r.get(2)?,
+                title: r.get(3)?,
+                image_url: r.get(4)?,
+                primary_url: r.get(5)?,
+                target_price_try: r.get(6)?,
+                updated_at: r.get(7)?,
+                tracked_sizes: r.get(8)?,
+                sizes_json: r.get(9)?,
+                quick_checkout_url: r.get(10)?,
+                vote_metehan: r.get(11)?,
+                vote_ilayda: r.get(12)?,
+                shared_note: r.get(13)?,
+                added_by: r.get(14)?,
+                purchased_price_try: r.get(15)?,
+                purchased_at: r.get(16)?,
+                snapshot_price_try: r.get(17)?,
+                snapshot_at: r.get(18)?,
+            })
         })
         .map_err(|e| e.to_string())?
         .filter_map(Result::ok)
         .collect();
 
     let mut out = Vec::new();
-    for (id, folder_id, folder_name, title, image_url, primary_url, target_price_try, updated_at, tracked_sizes, sizes_json, quick_checkout_url) in rows {
+    for rp in rows {
+        let RawProdRow {
+            id, folder_id, folder_name, title, image_url, primary_url, target_price_try, updated_at,
+            tracked_sizes, sizes_json, quick_checkout_url, vote_metehan, vote_ilayda, shared_note,
+            added_by, purchased_price_try, purchased_at, snapshot_price_try, snapshot_at,
+        } = rp;
         // History
         let mut hstmt = conn
             .prepare("SELECT ts, price_try, usd_rate, source FROM price_history WHERE product_id = ?1 ORDER BY id ASC")
@@ -547,6 +590,14 @@ pub fn list_products(conn: &Connection) -> Result<Vec<ProductDetail>, String> {
             used_listings,
             history,
             updated_at,
+            vote_metehan,
+            vote_ilayda,
+            shared_note,
+            added_by,
+            purchased_price_try,
+            purchased_at,
+            snapshot_price_try,
+            snapshot_at,
         });
     }
 
@@ -696,6 +747,65 @@ pub fn update_product_sizes(
     )
     .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+pub fn set_product_vote(
+    conn: &Connection,
+    product_id: i64,
+    who: &str,
+    vote: &str,
+    note: Option<&str>,
+) -> Result<(), String> {
+    let col = if who.eq_ignore_ascii_case("ilayda") {
+        "vote_ilayda"
+    } else {
+        "vote_metehan"
+    };
+    let clean_vote = match vote.to_lowercase().as_str() {
+        "buy" | "wait" | "pass" => vote.to_lowercase(),
+        _ => String::new(),
+    };
+    let sql = format!("UPDATE products SET {} = ?1 WHERE id = ?2", col);
+    conn.execute(&sql, params![clean_vote, product_id]).map_err(|e| e.to_string())?;
+    if let Some(n) = note {
+        conn.execute("UPDATE products SET shared_note = ?1 WHERE id = ?2", params![n.trim(), product_id])
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+pub fn mark_purchased(conn: &Connection, product_id: i64, price_try: Option<f64>) -> Result<(), String> {
+    if let Some(p) = price_try {
+        let now = Utc::now().to_rfc3339();
+        conn.execute(
+            "UPDATE products SET purchased_price_try = ?1, purchased_at = ?2 WHERE id = ?3",
+            params![p, now, product_id],
+        )
+        .map_err(|e| e.to_string())?;
+    } else {
+        conn.execute(
+            "UPDATE products SET purchased_price_try = NULL, purchased_at = NULL WHERE id = ?1",
+            params![product_id],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+pub fn freeze_price_snapshots(conn: &Connection) -> Result<usize, String> {
+    let list = list_products(conn)?;
+    let now = Utc::now().to_rfc3339();
+    let mut count = 0usize;
+    for p in list {
+        if p.best_new_try > 0.0 {
+            let _ = conn.execute(
+                "UPDATE products SET snapshot_price_try = ?1, snapshot_at = ?2 WHERE id = ?3",
+                params![p.best_new_try, now, p.id],
+            );
+            count += 1;
+        }
+    }
+    Ok(count)
 }
 
 pub fn get_saved_total(conn: &Connection) -> f64 {

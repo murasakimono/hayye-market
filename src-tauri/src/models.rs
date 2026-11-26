@@ -114,6 +114,14 @@ pub struct ProductDetail {
     pub used_listings: Vec<UsedListing>,
     pub history: Vec<PricePoint>,
     pub updated_at: String,
+    pub vote_metehan: String,
+    pub vote_ilayda: String,
+    pub shared_note: String,
+    pub added_by: String,
+    pub purchased_price_try: Option<f64>,
+    pub purchased_at: Option<String>,
+    pub snapshot_price_try: Option<f64>,
+    pub snapshot_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -175,6 +183,8 @@ pub struct BridgeIngestProduct {
     pub photo_count: Option<u8>,
     pub sizes: Option<Vec<SizeVariant>>,
     pub quick_checkout_url: Option<String>,
+    pub tracked_sizes: Option<String>,
+    pub target_price_try: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
