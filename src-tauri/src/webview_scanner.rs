@@ -50,15 +50,15 @@ pub const SITES: &[SiteDef] = &[
         id: "bubilet",
         name: "Bubilet",
         kind: "events",
-        login_url: "https://www.bubilet.com.tr/giris",
+        login_url: "https://www.bubilet.com.tr/istanbul",
         scan_url: "https://www.bubilet.com.tr/istanbul",
     },
     SiteDef {
         id: "biletix",
         name: "Biletix",
         kind: "events",
-        login_url: "https://www.biletix.com/auth/TURKIYE/tr/login",
-        scan_url: "https://www.biletix.com/search/TURKIYE/tr#!city:istanbul",
+        login_url: "https://www.biletix.com/anasayfa/TURKIYE/tr",
+        scan_url: "https://www.biletix.com/anasayfa/TURKIYE/tr",
     },
     SiteDef {
         id: "passo",
@@ -71,14 +71,14 @@ pub const SITES: &[SiteDef] = &[
         id: "zorlupsm",
         name: "Zorlu PSM",
         kind: "events",
-        login_url: "https://www.zorlupsm.com/tr",
+        login_url: "https://www.zorlupsm.com/tr/etkinlikler",
         scan_url: "https://www.zorlupsm.com/tr/etkinlikler",
     },
     SiteDef {
         id: "paribu",
         name: "Paribu Pass",
         kind: "events",
-        login_url: "https://www.paribucineverse.com/giris",
+        login_url: "https://www.paribucineverse.com",
         scan_url: "https://www.paribucineverse.com",
     },
     SiteDef {
@@ -92,35 +92,35 @@ pub const SITES: &[SiteDef] = &[
         id: "hepsiburada",
         name: "Hepsiburada",
         kind: "shopping",
-        login_url: "https://giris.hepsiburada.com",
+        login_url: "https://www.hepsiburada.com",
         scan_url: "https://www.hepsiburada.com/ara?q={q}",
     },
     SiteDef {
         id: "zara",
         name: "Zara TR",
         kind: "shopping",
-        login_url: "https://www.zara.com/tr/tr/logon",
+        login_url: "https://www.zara.com/tr/",
         scan_url: "https://www.zara.com/tr/tr/search?searchTerm={q}",
     },
     SiteDef {
         id: "sahibinden",
         name: "Sahibinden",
         kind: "shopping",
-        login_url: "https://secure.sahibinden.com/giris",
+        login_url: "https://www.sahibinden.com",
         scan_url: "https://www.sahibinden.com/kelime-ile-arama?query_text={q}",
     },
     SiteDef {
         id: "dolap",
         name: "Dolap",
         kind: "shopping",
-        login_url: "https://dolap.com/giris",
+        login_url: "https://dolap.com",
         scan_url: "https://dolap.com/ara?q={q}",
     },
     SiteDef {
         id: "sephora",
         name: "Sephora TR",
         kind: "shopping",
-        login_url: "https://www.sephora.com.tr/login",
+        login_url: "https://www.sephora.com.tr",
         scan_url: "https://www.sephora.com.tr/arama?q={q}",
     },
 ];
@@ -162,6 +162,7 @@ pub fn open_site_login_window(app: &AppHandle, site_id: &str) -> Result<String, 
 
     WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
         .title(&format!("Hayye Oturum — {} (Giriş yaptıktan sonra pencereyi kapatabilirsin)", def.name))
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
         .inner_size(1100.0, 760.0)
         .resizable(true)
         .center()
@@ -387,6 +388,7 @@ pub fn spawn_background_scan(app: &AppHandle, site_id: &str, query: Option<&str>
 
     let win = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
         .title(&format!("Hayye Arka Plan Tarayıcı — {}", def.name))
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
         .inner_size(1200.0, 820.0)
         .visible(false)
         .skip_taskbar(true)

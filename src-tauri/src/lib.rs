@@ -638,12 +638,12 @@ fn get_site_sessions() -> Vec<models::SiteSessionInfo> {
 }
 
 #[tauri::command]
-fn open_site_session(app: tauri::AppHandle, site_id: String) -> Result<String, String> {
+async fn open_site_session(app: tauri::AppHandle, site_id: String) -> Result<String, String> {
     webview_scanner::open_site_login_window(&app, &site_id)
 }
 
 #[tauri::command]
-fn scan_events_via_webview(app: tauri::AppHandle) -> Result<String, String> {
+async fn scan_events_via_webview(app: tauri::AppHandle) -> Result<String, String> {
     for sid in ["bubilet", "biletix", "passo", "zorlupsm"] {
         let _ = webview_scanner::spawn_background_scan(&app, sid, None);
     }
@@ -651,7 +651,7 @@ fn scan_events_via_webview(app: tauri::AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn deep_search_via_webview(app: tauri::AppHandle, query: String) -> Result<String, String> {
+async fn deep_search_via_webview(app: tauri::AppHandle, query: String) -> Result<String, String> {
     let q = query.trim();
     if q.len() < 2 {
         return Err("En az 2 karakter gir.".to_string());
