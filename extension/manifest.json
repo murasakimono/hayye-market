@@ -1,0 +1,49 @@
+{
+  "manifest_version": 3,
+  "name": "Hayye Bridge — Fiyat, Beden, Favori & 2. El Aktarıcı",
+  "version": "1.1.0",
+  "description": "Inditex (Zara, Bershka, Stradivarius, Pull&Bear), Flaw Wear, HypeTR, Nike, Beymen, Boyner, Sephora, Gratis, Watsons, Sahibinden ve Dolap'tan tek tıkla fiyat, beden stoğu, favori/sepet ve 2. el ilan aktar.",
+  "permissions": ["activeTab", "scripting"],
+  "host_permissions": ["http://127.0.0.1:47821/*"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Hayye Bridge"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.zara.com/*",
+        "*://*.bershka.com/*",
+        "*://*.stradivarius.com/*",
+        "*://*.pullandbear.com/*",
+        "*://*.massimodutti.com/*",
+        "*://*.oysho.com/*",
+        "*://*.flawwear.com/*",
+        "*://*.hypetr.com/*",
+        "*://*.36clo.com/*",
+        "*://*.36clo.com.tr/*",
+        "*://*.nike.com/*",
+        "*://*.beymen.com/*",
+        "*://*.boyner.com.tr/*",
+        "*://*.sephora.com.tr/*",
+        "*://*.gratis.com/*",
+        "*://*.watsons.com.tr/*",
+        "*://*.rossmann.com.tr/*",
+        "*://*.sahibinden.com/*",
+        "*://*.dolap.com/*",
+        "*://*.letgo.com/*",
+        "*://*.trendyol.com/*",
+        "*://*.hepsiburada.com/*",
+        "*://*.n11.com/*",
+        "*://*.amazon.com.tr/*",
+        "*://*.itopya.com/*",
+        "*://*.incehesap.com/*",
+        "*://*.sinerji.gen.tr/*",
+        "*://*.akakce.com/*",
+        "*://*.vatanbilgisayar.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

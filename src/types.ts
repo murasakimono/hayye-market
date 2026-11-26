@@ -1,0 +1,165 @@
+export interface MarketRates {
+  usd_try: number;
+  eur_try: number;
+  updated_at: string;
+}
+
+export interface FolderItem {
+  id: number;
+  name: string;
+  item_count: number;
+  total_new_try: number;
+  total_used_try: number;
+}
+
+export interface TrustFactor {
+  label: string;
+  delta: number;
+  positive: boolean;
+}
+
+export interface RetailOffer {
+  id: number;
+  product_id: number;
+  store_name: string;
+  seller_name: string;
+  price_try: number;
+  shipping_try: number;
+  in_stock: boolean;
+  url: string;
+  trust_score: number;
+  trust_reasons: TrustFactor[];
+  updated_at: string;
+}
+
+export interface UsedListing {
+  id: number;
+  product_id: number;
+  platform: string;
+  title: string;
+  price_try: number;
+  city: string;
+  seller_name: string;
+  param_guvende: boolean;
+  has_invoice_box: boolean;
+  photo_count: number;
+  url: string;
+  trust_score: number;
+  trust_reasons: TrustFactor[];
+  savings_pct: number;
+  scam_risk: boolean;
+  updated_at: string;
+}
+
+export interface PricePoint {
+  ts: string;
+  price_try: number;
+  usd_rate: number;
+  source: string;
+}
+
+export interface DiscountVerdict {
+  status: 'GENUINE_DIP' | 'GENUINE_DROP' | 'NORMAL' | 'INFLATED_FAKE' | string;
+  badge: string;
+  pct_vs_avg: number;
+  avg_30d_try: number;
+  min_all_try: number;
+  max_all_try: number;
+  explanation: string;
+}
+
+export interface SizeVariant {
+  size: string;
+  in_stock: boolean;
+  variant_id: string | null;
+  cart_url: string | null;
+}
+
+export interface UnitPriceInfo {
+  amount: number;
+  unit: string;
+  price_per_10_try: number;
+}
+
+export interface TunnelStatus {
+  state: string;
+  mode: string;
+  active_url: string;
+  public_url: string;
+  stable_url: string;
+  published: boolean;
+  error: string;
+  cloudflared_path: string;
+}
+
+export interface MobileAccessInfo {
+  lan_url: string;
+  cloudflare_url: string;
+  cloudflared_installed: boolean;
+  tunnel: TunnelStatus;
+}
+
+export interface ProductDetail {
+  id: number;
+  folder_id: number;
+  folder_name: string;
+  title: string;
+  image_url: string;
+  primary_url: string;
+  target_price_try: number | null;
+  tracked_sizes: string;
+  sizes: SizeVariant[];
+  quick_checkout_url: string | null;
+  unit_price: UnitPriceInfo | null;
+  best_new_try: number;
+  best_used_try: number | null;
+  used_median_try: number | null;
+  avg_trust_score: number;
+  discount_verdict: DiscountVerdict;
+  offers: RetailOffer[];
+  used_listings: UsedListing[];
+  history: PricePoint[];
+  updated_at: string;
+}
+
+export interface SearchCandidate {
+  title: string;
+  price_try: number;
+  store_name: string;
+  url: string;
+  image_url: string;
+  source: string;
+  offer_count: number;
+}
+
+export interface AlertSettings {
+  discord_webhook: string;
+  telegram_bot_token: string;
+  telegram_chat_id: string;
+  ntfy_topic: string;
+  refresh_interval_min: number;
+  cloudflare_tunnel_url: string;
+  cloudflare_tunnel_token: string;
+  cloudflare_worker_key: string;
+}
+
+export interface AddManualUsedRequest {
+  product_id: number;
+  platform: string;
+  title: string;
+  price_try: number;
+  city: string;
+  seller_name: string;
+  param_guvende: boolean;
+  has_invoice_box: boolean;
+  photo_count: number;
+  url: string;
+}
+
+export function fmtTry(v: number): string {
+  return new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 0 }).format(Math.round(v)) + ' ₺';
+}
+
+export function fmtUsd(v: number): string {
+  return '$' + new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(Math.round(v));
+}
