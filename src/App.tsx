@@ -892,8 +892,6 @@ export default function App() {
               className="font-editorial text-4xl sm:text-5xl leading-none"
             >
               {activeTab === 'discover' && 'Keşfet — Gerçek İndirim Akışı'}
-              {activeTab === 'discover' &&
-                `${discoverItems.length} doğrulanmış canlı düşüş • Anti-çöp filtreli, sahte bindirimden arındırılmış fırsatlar.`}
               {activeTab === 'gallery' && 'Koleksiyon & Lookbook'}
               {activeTab === 'radar' && 'Canlı Fırsat Radarı'}
               {activeTab === 'shared' && 'Metehan × İlayda Ortak Pano'}
@@ -1086,16 +1084,16 @@ export default function App() {
                 type="number"
                 value={discoverMin}
                 onChange={(e) => setDiscoverMin(e.target.value)}
-                placeholder="Min ₺ (örn. 1000)"
-                className="w-32 rounded-full px-3.5 py-2 text-xs font-mono-num focus:outline-none"
+                placeholder="Min ₺"
+                className="w-28 rounded-full px-3.5 py-2 text-xs font-mono-num focus:outline-none"
                 style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--ink)' }}
               />
               <input
                 type="number"
                 value={discoverMax}
                 onChange={(e) => setDiscoverMax(e.target.value)}
-                placeholder="Max ₺ (örn. 1500)"
-                className="w-32 rounded-full px-3.5 py-2 text-xs font-mono-num focus:outline-none"
+                placeholder="Max ₺"
+                className="w-28 rounded-full px-3.5 py-2 text-xs font-mono-num focus:outline-none"
                 style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--ink)' }}
               />
               <button
