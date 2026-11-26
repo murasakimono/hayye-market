@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 pub struct MarketRates {
     pub usd_try: f64,
     pub eur_try: f64,
+    pub gold_gram_try: f64,
     pub updated_at: String,
 }
 
@@ -145,6 +146,19 @@ pub struct AlertSettings {
     pub cloudflare_tunnel_url: String,
     pub cloudflare_tunnel_token: String,
     pub cloudflare_worker_key: String,
+    pub active_theme: String,
+    pub monthly_budget_try: f64,
+    pub user_cards: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UsedAiAnalysis {
+    pub engine: String,
+    pub risk_level: String,
+    pub red_flags: Vec<String>,
+    pub fair_price_try: f64,
+    pub summary: String,
+    pub bargain_script: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -185,6 +199,7 @@ pub struct BridgeIngestProduct {
     pub quick_checkout_url: Option<String>,
     pub tracked_sizes: Option<String>,
     pub target_price_try: Option<f64>,
+    pub custom_css_selector: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

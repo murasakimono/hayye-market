@@ -353,6 +353,123 @@ fn freeze_price_snapshots() -> Result<usize, String> {
 }
 
 #[tauri::command]
+fn set_active_theme(theme: String) -> Result<(), String> {
+    let conn = db::open_db()?;
+    conn.execute(
+        "INSERT INTO settings (key, val) VALUES ('active_theme', ?1) ON CONFLICT(key) DO UPDATE SET val = excluded.val",
+        params![theme.trim()],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn analyze_used_with_ollama(
+    title: String,
+    description: String,
+    price_try: f64,
+    new_retail_try: f64,
+) -> UsedAiAnalysis {
+    let combined = format!("{} {}", title, description).to_lowercase();
+    let mut flags: Vec<String> = Vec::new();
+    let rules = [
+        ("ekran değişti", "Ekran değişimi belirtilmiş (orijinal parça doğrulanmalı)"),
+        ("ekran degisti", "Ekran değişimi belirtilmiş"),
+        ("tamir", "Tamir/onarım geçmişi var"),
+        ("yurtdışı", "Yurtdışı cihaz (IMEI/garanti riski)"),
+        ("yurtdisi", "Yurtdışı cihaz (IMEI/garanti riski)"),
+        ("kayıtsız", "IMEI kayıtsız cihaz"),
+        ("kayitsiz", "IMEI kayıtsız cihaz"),
+        ("kutu yok", "Kutu yok (ikinci el değerini %8-10 düşürür)"),
+        ("faturasız", "Faturasız / garanti kanıtı eksik"),
+        ("çizik", "Kozmetik çizik/hasar belirtilmiş"),
+        ("cizik", "Kozmetik çizik/hasar belirtilmiş"),
+        ("kırık", "Kırık/çatlak parça uyarısı"),
+        ("pil %7", "Pil sağlığı %80 altında (pil değişim masrafı eklenir)"),
+        ("pil 7", "Pil sağlığı %80 altında"),
+    ];
+    for (kw, msg) in rules {
+        if combined.contains(kw) {
+            flags.push(msg.to_string());
+        }
+    }
+
+    let base_fair = if new_retail_try > 0.0 {
+        (new_retail_try * if flags.is_empty() { 0.72 } else { 0.58 }).min(price_try * 0.92)
+    } else {
+        price_try * if flags.is_empty() { 0.90 } else { 0.80 }
+    };
+    let fair = ((base_fair / 50.0).round() * 50.0).max(50.0);
+
+    // Try local Ollama (no_proxy, 12s timeout)
+    if let Ok(cli) = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(std::time::Duration::from_secs(12))
+        .build()
+    {
+        if let Ok(tags_resp) = cli.get("http://127.0.0.1:11434/api/tags").send().await {
+            if let Ok(tj) = tags_resp.json::<serde_json::Value>().await {
+                let model = tj["models"]
+                    .as_array()
+                    .and_then(|arr| arr.first())
+                    .and_then(|m| m["name"].as_str())
+                    .map(|s| s.to_string());
+                if let Some(model_name) = model {
+                    let prompt = format!(
+                        "Türkiye 2. el ilan uzmanısın. Kısa ve net Türkçe analiz yap (maksimum 2 cümle). Ürün: '{}'. Açıklama: '{}'. İlan fiyatı: {:.0} TL. Sıfır piyasa: {:.0} TL. Gizli kusurları, riski ve mantıklı pazarlık hedefini söyle.",
+                        title, description, price_try, new_retail_try
+                    );
+                    if let Ok(gen_resp) = cli
+                        .post("http://127.0.0.1:11434/api/generate")
+                        .json(&serde_json::json!({
+                            "model": model_name,
+                            "prompt": prompt,
+                            "stream": false
+                        }))
+                        .send()
+                        .await
+                    {
+                        if let Ok(gj) = gen_resp.json::<serde_json::Value>().await {
+                            if let Some(ans) = gj["response"].as_str().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
+                                return UsedAiAnalysis {
+                                    engine: format!("Ollama ({})", model_name),
+                                    risk_level: if flags.len() >= 2 { "YÜKSEK" } else if flags.len() == 1 { "ORTA" } else { "DÜŞÜK" }.to_string(),
+                                    red_flags: flags,
+                                    fair_price_try: fair,
+                                    summary: ans,
+                                    bargain_script: format!("Merhaba, ilanınızı inceledim. Piyasa ve durum göz önüne alındığında {:.0} ₺ nakit / Param Güvende ile bugün alabilirim, uygun mudur?", fair),
+                                };
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let risk_level = if flags.len() >= 2 {
+        "YÜKSEK"
+    } else if flags.len() == 1 {
+        "ORTA"
+    } else {
+        "DÜŞÜK"
+    };
+    let summary = if flags.is_empty() {
+        format!("Metinde bariz gizli kusur ifadesi görünmüyor. Adil pazarlık hedefi yaklaşık {:.0} ₺.", fair)
+    } else {
+        format!("İlanda {} adet dikkat edilmesi gereken kusur/risk tespit edildi. Bu kusurlar düşüldüğünde adil teklif {:.0} ₺ bandında.", flags.len(), fair)
+    };
+    UsedAiAnalysis {
+        engine: "Hızlı Kusur Tarayıcı".to_string(),
+        risk_level: risk_level.to_string(),
+        red_flags: flags,
+        fair_price_try: fair,
+        summary,
+        bargain_script: format!("Merhaba, ilandaki detayları inceledim. {:.0} ₺ nakit / Param Güvende ile hemen alabilirim, sizin için uygun mudur?", fair),
+    }
+}
+
+#[tauri::command]
 fn get_saved_total() -> Result<f64, String> {
     let conn = db::open_db()?;
     Ok(db::get_saved_total(&conn))
@@ -469,6 +586,8 @@ pub fn run() {
             set_product_vote,
             mark_purchased,
             freeze_price_snapshots,
+            set_active_theme,
+            analyze_used_with_ollama,
             get_saved_total,
             record_savings,
             get_mobile_access_info,

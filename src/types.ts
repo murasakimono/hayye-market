@@ -1,6 +1,7 @@
 export interface MarketRates {
   usd_try: number;
   eur_try: number;
+  gold_gram_try: number;
   updated_at: string;
 }
 
@@ -149,6 +150,18 @@ export interface AlertSettings {
   cloudflare_tunnel_url: string;
   cloudflare_tunnel_token: string;
   cloudflare_worker_key: string;
+  active_theme: string;
+  monthly_budget_try: number;
+  user_cards: string;
+}
+
+export interface UsedAiAnalysis {
+  engine: string;
+  risk_level: string;
+  red_flags: string[];
+  fair_price_try: number;
+  summary: string;
+  bargain_script: string;
 }
 
 export interface AddManualUsedRequest {

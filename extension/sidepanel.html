@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="tr" data-theme="obsidian-aurora">
+<head>
+  <meta charset="utf-8" />
+  <title>Hayye Market — Yan Panel</title>
+  <style>
+    :root, [data-theme="obsidian-aurora"] { --bg:#080A0D; --surf:#11141A; --surf2:rgba(255,255,255,.05); --ink:#F5F2EB; --muted:#8F96A3; --acc:#10B981; --accInk:#07100C; --bdr:rgba(255,255,255,.09); }
+    [data-theme="noir-velvet"] { --bg:#0F090D; --surf:#1A0F16; --surf2:rgba(255,230,235,.06); --ink:#FAF3F0; --muted:#B098A4; --acc:#F43F5E; --accInk:#FFF7F8; --bdr:rgba(255,220,230,.1); }
+    [data-theme="atelier-ivory"] { --bg:#F4EFE6; --surf:#FFFDF9; --surf2:rgba(20,19,17,.05); --ink:#161513; --muted:#6C675E; --acc:#059669; --accInk:#FFFFFF; --bdr:rgba(20,19,17,.1); }
+    [data-theme="arctic-frost"] { --bg:#060C14; --surf:#0D1826; --surf2:rgba(186,230,253,.07); --ink:#F0F9FF; --muted:#8EB2CC; --acc:#38BDF8; --accInk:#05131E; --bdr:rgba(186,230,253,.14); }
+    [data-theme="midnight-botanical"] { --bg:#070F0C; --surf:#0D1914; --surf2:rgba(212,245,226,.06); --ink:#F2F7F4; --muted:#8FA89B; --acc:#34D399; --accInk:#05140E; --bdr:rgba(212,245,226,.1); }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 14px; background: var(--bg); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    .top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; }
+    .brand img { width: 26px; height: 26px; border-radius: 8px; }
+    .pill { font-size: 10px; font-weight: 600; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--bdr); color: var(--muted); }
+    .pill.ok { color: var(--acc); border-color: var(--acc); }
+    .card { background: var(--surf); border: 1px solid var(--bdr); border-radius: 18px; padding: 13px; margin-bottom: 12px; }
+    .title { font-size: 13px; font-weight: 600; line-height: 1.38; margin-bottom: 6px; }
+    .price { font-family: ui-monospace, monospace; font-size: 19px; font-weight: 700; color: var(--acc); }
+    .lbl { font-size: 11px; color: var(--muted); margin: 10px 0 6px; display: block; }
+    .sizes { display: flex; flex-wrap: wrap; gap: 5px; }
+    .sz { border: 1px solid var(--bdr); background: var(--surf2); color: var(--ink); border-radius: 999px; padding: 4px 10px; font-size: 11px; font-family: ui-monospace, monospace; cursor: pointer; }
+    .sz.sel { background: var(--acc); color: var(--accInk); border-color: var(--acc); font-weight: 700; }
+    .sz.out { opacity: .5; text-decoration: line-through; }
+    input { width: 100%; background: var(--bg); border: 1px solid var(--bdr); color: var(--ink); border-radius: 12px; padding: 8px 10px; font-size: 12px; font-family: ui-monospace, monospace; }
+    .btn { width: 100%; margin-top: 8px; padding: 10px; border-radius: 999px; border: none; background: var(--acc); color: var(--accInk); font-weight: 700; font-size: 12px; cursor: pointer; }
+    .btn-sec { width: 100%; margin-top: 7px; padding: 9px; border-radius: 999px; border: 1px solid var(--bdr); background: var(--surf2); color: var(--ink); font-weight: 600; font-size: 11px; cursor: pointer; }
+    .w-item { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--bdr); font-size: 12px; }
+    .w-item:last-child { border-bottom: none; }
+    #msg { font-size: 11px; color: var(--acc); margin-bottom: 8px; min-height: 15px; }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <div class="brand"><img src="icons/icon32.png" alt="H" /> Hayye Market</div>
+    <span id="conn" class="pill">Kontrol...</span>
+  </div>
+  <div id="msg"></div>
+  <div id="current" class="card">
+    <div style="font-size:12px;color:var(--muted)">Aktif sekme inceleniyor...</div>
+  </div>
+  <div class="card">
+    <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px">SON TAKİP EDİLENLER</div>
+    <div id="watch">Yükleniyor...</div>
+  </div>
+  <script src="sidepanel.js"></script>
+</body>
+</html>

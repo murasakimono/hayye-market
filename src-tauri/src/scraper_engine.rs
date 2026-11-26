@@ -63,6 +63,7 @@ pub fn detect_unit_price(title: &str, price_try: f64) -> Option<UnitPriceInfo> {
 pub async fn fetch_market_rates() -> MarketRates {
     let mut usd = 35.2;
     let mut eur = 38.4;
+    let mut xau_usd = 2680.0;
     if let Ok(resp) = client()
         .get("https://api.frankfurter.app/latest?from=TRY&to=USD,EUR")
         .send()
@@ -77,9 +78,22 @@ pub async fn fetch_market_rates() -> MarketRates {
             }
         }
     }
+    if let Ok(resp) = client()
+        .get("https://data-asg.goldprice.org/dbXRates/USD")
+        .send()
+        .await
+    {
+        if let Ok(j) = resp.json::<serde_json::Value>().await {
+            if let Some(oz) = j["items"][0]["xauPrice"].as_f64().filter(|v| *v > 1000.0) {
+                xau_usd = oz;
+            }
+        }
+    }
+    let gold_gram_try = (xau_usd / 31.1035) * usd;
     MarketRates {
         usd_try: (usd * 100.0).round() / 100.0,
         eur_try: (eur * 100.0).round() / 100.0,
+        gold_gram_try: gold_gram_try.round(),
         updated_at: Utc::now().to_rfc3339(),
     }
 }

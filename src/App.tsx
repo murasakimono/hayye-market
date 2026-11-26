@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   Bell,
+  Bot,
   Camera,
   Check,
   Clock,
@@ -9,8 +11,10 @@ import {
   Flame,
   FolderPlus,
   Heart,
+  Layers,
   LayoutGrid,
   Package,
+  Palette,
   RefreshCw,
   Search,
   Settings,
@@ -20,22 +24,26 @@ import {
   Trash2,
   TrendingDown,
   Users,
+  Wallet,
   X,
   Zap,
 } from 'lucide-react';
 import { api } from './api';
 import { PriceChart } from './components/PriceChart';
 import { SettingsModal } from './components/SettingsModal';
+import { THEMES, applyThemeToDom } from './themes';
 import {
   type FolderItem,
   type MarketRates,
   type ProductDetail,
   type SearchCandidate,
+  type UsedAiAnalysis,
   fmtTry,
   fmtUsd,
 } from './types';
 
-type DockTab = 'gallery' | 'radar' | 'shared' | 'orders';
+type DockTab = 'gallery' | 'radar' | 'shared' | 'moodboard' | 'orders';
+type CurrencyMode = 'TRY' | 'USD' | 'GOLD';
 
 function daysSince(iso: string | null): number {
   if (!iso) return 999;
@@ -43,22 +51,71 @@ function daysSince(iso: string | null): number {
   return Math.max(0, Math.floor(ms / 86_400_000));
 }
 
-function voteLabel(v: string): { text: string; cls: string } {
-  if (v === 'buy') return { text: 'Al', cls: 'bg-[#10B981]/20 text-[#10B981] border-[#10B981]/40' };
-  if (v === 'wait') return { text: 'Bekle', cls: 'bg-amber-400/15 text-amber-300 border-amber-400/35' };
-  if (v === 'pass') return { text: 'Pas', cls: 'bg-[#F43F5E]/15 text-[#F43F5E] border-[#F43F5E]/35' };
-  return { text: '—', cls: 'bg-white/[0.04] text-[#8F96A3] border-white/[0.08]' };
+function voteLabel(v: string): { text: string; color: string; bg: string } {
+  if (v === 'buy') return { text: 'Al', color: '#10B981', bg: 'rgba(16,185,129,0.18)' };
+  if (v === 'wait') return { text: 'Bekle', color: '#F59E0B', bg: 'rgba(245,158,11,0.16)' };
+  if (v === 'pass') return { text: 'Pas', color: '#F43F5E', bg: 'rgba(244,63,94,0.16)' };
+  return { text: '—', color: 'var(--muted)', bg: 'var(--surface-2)' };
+}
+
+function inditexWaveHint(p: ProductDetail): { wave: string; advice: string } | null {
+  const isFashion =
+    /zara|bershka|stradivarius|pullandbear|massimo|oysho|flaw|hype|nike|beymen|boyner/i.test(
+      p.primary_url + ' ' + p.folder_name
+    ) || p.sizes.length > 0;
+  if (!isFashion) return null;
+  const inStockCount = p.sizes.filter((s) => s.in_stock).length;
+  const totalSizes = p.sizes.length;
+  const drop = p.discount_verdict.pct_vs_avg;
+  if (drop <= -40) {
+    return {
+      wave: '3. Dalga Final İndirim',
+      advice: 'Maksimum indirim bandında — beden tükenmeden hemen değerlendir.',
+    };
+  }
+  if (drop <= -18) {
+    return {
+      wave: '2. Dalga İndirim (%20–40)',
+      advice:
+        totalSizes > 0 && inStockCount <= 2
+          ? 'Sadece 1–2 beden kaldı; sonraki dalgayı beklemek riskli.'
+          : '2. dalgada; stok bolsa 2–3 hafta içinde ek düşüş gelebilir.',
+    };
+  }
+  return {
+    wave: 'Sezon / SINT İzleme (07:00–09:00)',
+    advice:
+      totalSizes > 0 && inStockCount === 0
+        ? 'İade kaynaklı tekil beden stokları sabah 07:00–09:00 arasında düşer.'
+        : 'Normal sezon fiyatı — hedef fiyat veya sezon başlangıcı için takipte.',
+  };
 }
 
 export default function App() {
-  const [rates, setRates] = useState<MarketRates>({ usd_try: 35.2, eur_try: 38.4, updated_at: '' });
+  const [rates, setRates] = useState<MarketRates>({
+    usd_try: 35.2,
+    eur_try: 38.4,
+    gold_gram_try: 3050,
+    updated_at: '',
+  });
   const [folders, setFolders] = useState<FolderItem[]>([]);
   const [products, setProducts] = useState<ProductDetail[]>([]);
   const [activeTab, setActiveTab] = useState<DockTab>('gallery');
   const [activeFolder, setActiveFolder] = useState<number | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [currency, setCurrency] = useState<'TRY' | 'USD'>('TRY');
+  const [currency, setCurrency] = useState<CurrencyMode>('TRY');
   const [savedTotal, setSavedTotal] = useState<number>(0);
+  const [activeTheme, setActiveTheme] = useState<string>('obsidian-aurora');
+  const [showThemeMenu, setShowThemeMenu] = useState(false);
+  const [monthlyBudget, setMonthlyBudget] = useState<number>(15000);
+  const [userCards, setUserCards] = useState<string>('Bonus, World, Maximum');
+  const [moodIds, setMoodIds] = useState<number[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('hayye_mood_ids') || '[]');
+    } catch {
+      return [];
+    }
+  });
 
   // Search & add
   const [query, setQuery] = useState('');
@@ -67,7 +124,7 @@ export default function App() {
   const [showCandidates, setShowCandidates] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // Modals & status
+  // Modals & tools
   const [showSettings, setShowSettings] = useState(false);
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
@@ -76,6 +133,8 @@ export default function App() {
   const [noteInput, setNoteInput] = useState('');
   const [shippingCost, setShippingCost] = useState(0);
   const [installmentRate, setInstallmentRate] = useState(3.2);
+  const [aiResult, setAiResult] = useState<Record<number, UsedAiAnalysis>>({});
+  const [aiLoadingId, setAiLoadingId] = useState<number | null>(null);
   const [showManualUsed, setShowManualUsed] = useState(false);
   const [manualUsed, setManualUsed] = useState({
     platform: 'Sahibinden',
@@ -97,12 +156,23 @@ export default function App() {
 
   const loadAll = async () => {
     try {
-      const [f, p, sv] = await Promise.all([api.getFolders(), api.getProducts(), api.getSavedTotal()]);
+      const [f, p, sv, st] = await Promise.all([
+        api.getFolders(),
+        api.getProducts(),
+        api.getSavedTotal(),
+        api.getAlertSettings(),
+      ]);
       setFolders(f);
       setProducts(p);
       setSavedTotal(sv);
+      if (st?.active_theme) {
+        setActiveTheme(st.active_theme);
+        applyThemeToDom(st.active_theme);
+      }
+      if (st?.monthly_budget_try) setMonthlyBudget(st.monthly_budget_try);
+      if (st?.user_cards) setUserCards(st.user_cards);
     } catch {
-      // Outside Tauri preview
+      applyThemeToDom(activeTheme);
     }
   };
 
@@ -117,6 +187,7 @@ export default function App() {
       }
       if (e.key === 'Escape') {
         setShowCandidates(false);
+        setShowThemeMenu(false);
         setSelectedId(null);
       }
     };
@@ -139,7 +210,27 @@ export default function App() {
     }
   }, [selected?.id]);
 
-  // Derived collections
+  const toggleMood = (id: number) => {
+    setMoodIds((prev) => {
+      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id].slice(-8);
+      localStorage.setItem('hayye_mood_ids', JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const handleSelectTheme = async (themeId: string) => {
+    setActiveTheme(themeId);
+    applyThemeToDom(themeId);
+    setShowThemeMenu(false);
+    try {
+      await api.setActiveTheme(themeId);
+      const t = THEMES.find((x) => x.id === themeId);
+      notify(`Tema güncellendi: ${t?.name} (iPhone & Eklenti senkron)`);
+    } catch {
+      // Preview mode
+    }
+  };
+
   const folderProducts = useMemo(() => {
     if (activeFolder === null) return products;
     return products.filter((p) => p.folder_id === activeFolder);
@@ -153,9 +244,7 @@ export default function App() {
         .split(',')
         .map((s) => s.trim().toUpperCase())
         .filter(Boolean);
-      const sizeInStock = p.sizes.some(
-        (s) => s.in_stock && wanted.includes(s.size.toUpperCase())
-      );
+      const sizeInStock = p.sizes.some((s) => s.in_stock && wanted.includes(s.size.toUpperCase()));
       const hotUsed =
         p.best_used_try !== null && p.best_new_try > 0 && p.best_used_try <= p.best_new_try * 0.8;
       const refundDrop =
@@ -176,17 +265,35 @@ export default function App() {
     [products]
   );
 
+  const moodProducts = useMemo(() => {
+    const picked = products.filter((p) => moodIds.includes(p.id));
+    return picked.length > 0 ? picked : products.slice(0, 6);
+  }, [products, moodIds]);
+
+  const committedSharedSpend = useMemo(() => {
+    return products
+      .filter((p) => p.purchased_price_try !== null || (p.vote_metehan === 'buy' && p.vote_ilayda === 'buy'))
+      .reduce((acc, p) => acc + (p.purchased_price_try ?? p.best_new_try ?? 0), 0);
+  }, [products]);
+
   const basketTotals = useMemo(() => {
     const newSum = folderProducts.reduce((acc, p) => acc + (p.best_new_try || 0), 0);
     const mixedSum = folderProducts.reduce(
-      (acc, p) => acc + (p.best_used_try && p.best_used_try < p.best_new_try ? p.best_used_try : p.best_new_try || 0),
+      (acc, p) =>
+        acc + (p.best_used_try && p.best_used_try < p.best_new_try ? p.best_used_try : p.best_new_try || 0),
       0
     );
     return { newSum, mixedSum, diff: Math.max(0, newSum - mixedSum) };
   }, [folderProducts]);
 
-  const fmtPrice = (tryVal: number) =>
-    currency === 'TRY' ? fmtTry(tryVal) : fmtUsd(tryVal / Math.max(1, rates.usd_try));
+  const fmtPrice = (tryVal: number) => {
+    if (currency === 'USD') return fmtUsd(tryVal / Math.max(1, rates.usd_try));
+    if (currency === 'GOLD') return `${(tryVal / Math.max(100, rates.gold_gram_try)).toFixed(2)} gr`;
+    return fmtTry(tryVal);
+  };
+
+  const cycleCurrency = () =>
+    setCurrency((c) => (c === 'TRY' ? 'USD' : c === 'USD' ? 'GOLD' : 'TRY'));
 
   const handleSearchOrUrl = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -252,7 +359,7 @@ export default function App() {
     try {
       const n = await api.freezePriceSnapshots();
       await loadAll();
-      notify(`${n} ürünün referans fiyatı donduruldu (İndirim Snapshot).`);
+      notify(`${n} ürünün referans fiyatı donduruldu.`);
     } catch (err) {
       notify(String(err));
     }
@@ -273,9 +380,7 @@ export default function App() {
       .map((s) => s.trim())
       .filter(Boolean);
     const exists = cur.some((s) => s.toUpperCase() === sz.toUpperCase());
-    const next = exists
-      ? cur.filter((s) => s.toUpperCase() !== sz.toUpperCase())
-      : [...cur, sz];
+    const next = exists ? cur.filter((s) => s.toUpperCase() !== sz.toUpperCase()) : [...cur, sz];
     await api.setTrackedSizes(p.id, next.join(', '));
     await loadAll();
     notify(exists ? `${sz} beden takibi kaldırıldı.` : `${sz} beden stoğa girince haber verilecek.`);
@@ -310,6 +415,18 @@ export default function App() {
     }
   };
 
+  const handleAnalyzeUsed = async (uId: number, title: string, price: number, newRetail: number) => {
+    setAiLoadingId(uId);
+    try {
+      const res = await api.analyzeUsedWithOllama(title, title, price, newRetail);
+      setAiResult((prev) => ({ ...prev, [uId]: res }));
+    } catch (err) {
+      notify(String(err));
+    } finally {
+      setAiLoadingId(null);
+    }
+  };
+
   const handleAddManualUsed = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selected || !manualUsed.title || !manualUsed.price_try) return;
@@ -340,151 +457,235 @@ export default function App() {
       ? radarProducts
       : activeTab === 'orders'
       ? purchasedProducts
+      : activeTab === 'moodboard'
+      ? moodProducts
       : folderProducts;
 
+  const waveInfo = selected ? inditexWaveHint(selected) : null;
+
   return (
-    <div className="min-h-screen flex flex-col text-[#F5F2EB] pb-28">
-      {/* Editorial Minimal Header */}
-      <header className="sticky top-0 z-30 px-6 py-4 bg-[#090A0C]/80 backdrop-blur-2xl border-b border-white/[0.05]">
+    <div className="min-h-screen flex flex-col pb-28 relative">
+      {/* Live Animated Atmospheric Mesh Background + Tactile Grain */}
+      <div className="hayye-mesh-bg" aria-hidden="true">
+        <div className="hayye-orb hayye-orb-1" />
+        <div className="hayye-orb hayye-orb-2" />
+        <div className="hayye-orb hayye-orb-3" />
+      </div>
+      <div className="hayye-grain" aria-hidden="true" />
+
+      {/* Editorial Liquid Glass Header */}
+      <header className="sticky top-0 z-30 px-6 py-3.5 glass-panel" style={{ borderLeft: 'none', borderRight: 'none', borderTop: 'none' }}>
         <div className="max-w-[1440px] mx-auto flex items-center gap-4">
           {/* Brand */}
           <div className="flex items-center gap-3 shrink-0">
-            <img
+            <motion.img
+              whileHover={{ rotate: -4, scale: 1.06 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 20 }}
               src="/hayye-icon.png"
               alt="Hayye Market"
-              className="w-9 h-9 rounded-xl shadow-lg ring-1 ring-white/10"
+              className="w-10 h-10 rounded-xl shadow-lg"
+              style={{ border: '1px solid var(--border-strong)' }}
             />
             <div>
-              <div className="font-editorial text-2xl leading-none tracking-tight text-[#F5F2EB]">
-                Hayye Market
-              </div>
-              <div className="flex items-center gap-2 mt-0.5 text-[10px] text-[#8F96A3] font-mono-num">
-                <span className="inline-flex items-center gap-1 text-[#10B981]">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] animate-pulse" />
+              <div className="font-editorial text-2xl leading-none tracking-tight">Hayye Market</div>
+              <div className="flex items-center gap-2 mt-0.5 text-[10px] font-mono-num" style={{ color: 'var(--muted)' }}>
+                <span className="inline-flex items-center gap-1" style={{ color: 'var(--accent)' }}>
+                  <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: 'var(--accent)' }} />
                   CANLI
                 </span>
                 <span>$ {rates.usd_try.toFixed(2)}</span>
-                <span>€ {rates.eur_try.toFixed(2)}</span>
+                <span>Au {Math.round(rates.gold_gram_try)}₺</span>
               </div>
             </div>
           </div>
 
-          {/* Raycast-style Centered Floating Search Pill */}
+          {/* Centered Floating Search Pill */}
           <div className="relative flex-1 max-w-2xl mx-auto">
             <form onSubmit={handleSearchOrUrl} className="relative flex items-center">
-              <Search className="w-4 h-4 text-[#8F96A3] absolute left-4 pointer-events-none" />
+              <Search className="w-4 h-4 absolute left-4 pointer-events-none" style={{ color: 'var(--muted)' }} />
               <input
                 ref={searchRef}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Ürün ara (Zara, Flaw, RTX 5070, Dyson...) veya link yapıştır  ⌘K"
-                className="w-full rounded-full bg-white/[0.05] hover:bg-white/[0.07] focus:bg-white/[0.08] border border-white/[0.08] focus:border-[#10B981]/60 pl-11 pr-28 py-2.5 text-sm text-[#F5F2EB] placeholder:text-[#747B87] focus:outline-none transition"
+                className="w-full rounded-full pl-11 pr-28 py-2.5 text-sm focus:outline-none transition"
+                style={{
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--ink)',
+                }}
               />
-              <button
+              <motion.button
+                whileTap={{ scale: 0.95 }}
                 type="submit"
                 disabled={searching}
-                className="absolute right-1.5 px-4 py-1.5 rounded-full bg-[#F5F2EB] hover:bg-white text-[#090A0C] text-xs font-semibold cursor-pointer disabled:opacity-50 transition"
+                className="absolute right-1.5 px-4 py-1.5 rounded-full text-xs font-semibold cursor-pointer disabled:opacity-50"
+                style={{ background: 'var(--ink)', color: 'var(--bg)' }}
               >
                 {searching ? 'Arıyor...' : query.startsWith('http') ? 'Ekle' : 'Ara'}
-              </button>
+              </motion.button>
             </form>
 
-            {showCandidates && (
-              <div className="absolute left-0 right-0 top-13 z-50 rounded-3xl bg-[#111317]/95 backdrop-blur-2xl border border-white/10 shadow-2xl overflow-hidden max-h-[62vh] overflow-y-auto">
-                <div className="px-5 py-3 border-b border-white/[0.06] flex items-center justify-between text-xs text-[#8F96A3]">
-                  <span>Canlı Türkiye Piyasa Sonuçları ({candidates.length})</span>
-                  <button
-                    onClick={() => setShowCandidates(false)}
-                    className="text-[#8F96A3] hover:text-white cursor-pointer"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-                {searching ? (
-                  <div className="p-8 text-center text-xs text-[#8F96A3]">
-                    Akakçe, Amazon TR ve Vatan canlı taranıyor...
+            <AnimatePresence>
+              {showCandidates && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                  transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+                  className="absolute left-0 right-0 top-13 z-50 rounded-3xl glass-card shadow-2xl overflow-hidden max-h-[62vh] overflow-y-auto"
+                  style={{ background: 'var(--surface-solid)' }}
+                >
+                  <div className="px-5 py-3 flex items-center justify-between text-xs" style={{ borderBottom: '1px solid var(--border)', color: 'var(--muted)' }}>
+                    <span>Canlı Türkiye Piyasa Sonuçları ({candidates.length})</span>
+                    <button onClick={() => setShowCandidates(false)} className="cursor-pointer">
+                      <X className="w-4 h-4" />
+                    </button>
                   </div>
-                ) : candidates.length === 0 ? (
-                  <div className="p-8 text-center text-xs text-[#8F96A3]">
-                    Sonuç bulunamadı. Doğrudan ürün linki de yapıştırabilirsin.
-                  </div>
-                ) : (
-                  <div className="divide-y divide-white/[0.05]">
-                    {candidates.map((c, idx) => (
-                      <div
-                        key={idx}
-                        onClick={() => handlePickCandidate(c)}
-                        className="px-5 py-3.5 hover:bg-white/[0.04] flex items-center gap-4 cursor-pointer transition"
-                      >
-                        {c.image_url ? (
-                          <img
-                            src={c.image_url}
-                            alt=""
-                            className="w-12 h-12 rounded-xl object-cover bg-white/5 shrink-0"
-                          />
-                        ) : (
-                          <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center text-[#8F96A3] shrink-0">
-                            <ShoppingBag className="w-5 h-5" />
+                  {searching ? (
+                    <div className="p-8 text-center text-xs" style={{ color: 'var(--muted)' }}>
+                      Akakçe, Amazon TR ve Vatan canlı taranıyor...
+                    </div>
+                  ) : candidates.length === 0 ? (
+                    <div className="p-8 text-center text-xs" style={{ color: 'var(--muted)' }}>
+                      Sonuç bulunamadı. Doğrudan ürün linki de yapıştırabilirsin.
+                    </div>
+                  ) : (
+                    <div>
+                      {candidates.map((c, idx) => (
+                        <div
+                          key={idx}
+                          onClick={() => handlePickCandidate(c)}
+                          className="px-5 py-3.5 flex items-center gap-4 cursor-pointer transition"
+                          style={{ borderBottom: '1px solid var(--border)' }}
+                        >
+                          {c.image_url ? (
+                            <img src={c.image_url} alt="" className="w-12 h-12 rounded-xl object-cover shrink-0" />
+                          ) : (
+                            <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'var(--surface-2)', color: 'var(--muted)' }}>
+                              <ShoppingBag className="w-5 h-5" />
+                            </div>
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-medium truncate">{c.title}</div>
+                            <div className="text-[11px] mt-0.5" style={{ color: 'var(--muted)' }}>
+                              {c.store_name} • {c.source}
+                            </div>
                           </div>
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <div className="text-sm font-medium text-[#F5F2EB] truncate">{c.title}</div>
-                          <div className="text-[11px] text-[#8F96A3] mt-0.5">
-                            {c.store_name} • {c.source}
+                          <div className="font-mono-num text-sm font-semibold shrink-0" style={{ color: 'var(--accent)' }}>
+                            {fmtPrice(c.price_try)}
                           </div>
                         </div>
-                        <div className="font-mono-num text-sm font-semibold text-[#10B981] shrink-0">
-                          {fmtPrice(c.price_try)}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+                      ))}
+                    </div>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
-          {/* Right Action Pills */}
-          <div className="flex items-center gap-2 shrink-0">
+          {/* Right Controls: Theme Swatch, Snapshot, Currency */}
+          <div className="flex items-center gap-2 shrink-0 relative">
             {savedTotal > 0 && (
               <div
-                title="Gerçek indirimlerden kurtarılan toplam tutar"
-                className="hidden xl:flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-[#10B981]/10 border border-[#10B981]/25 text-xs font-mono-num text-[#10B981]"
+                className="hidden xl:flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-mono-num"
+                style={{
+                  background: 'color-mix(in srgb, var(--accent) 14%, transparent)',
+                  color: 'var(--accent)',
+                  border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)',
+                }}
               >
                 <Sparkles className="w-3.5 h-3.5" />
                 {fmtTry(savedTotal)}
               </div>
             )}
+
+            {/* Quick Theme Switcher */}
+            <button
+              onClick={() => setShowThemeMenu((v) => !v)}
+              title="Canlı Tema Değiştir (Masaüstü + Eklenti + iOS)"
+              className="px-3 py-2 rounded-full text-xs font-medium flex items-center gap-1.5 cursor-pointer transition"
+              style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+            >
+              <Palette className="w-3.5 h-3.5" style={{ color: 'var(--accent)' }} />
+              <span className="hidden lg:inline">Tema</span>
+            </button>
+
+            <AnimatePresence>
+              {showThemeMenu && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 6, scale: 0.96 }}
+                  className="absolute right-0 top-12 w-64 p-2 rounded-2xl glass-card shadow-2xl z-50 space-y-1"
+                  style={{ background: 'var(--surface-solid)' }}
+                >
+                  {THEMES.map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => handleSelectTheme(t.id)}
+                      className="w-full px-3 py-2 rounded-xl flex items-center gap-2.5 text-left cursor-pointer transition"
+                      style={{
+                        background: activeTheme === t.id ? 'var(--surface-2)' : 'transparent',
+                        border: activeTheme === t.id ? '1px solid var(--accent)' : '1px solid transparent',
+                      }}
+                    >
+                      <div className="flex -space-x-1">
+                        {t.swatch.map((c, i) => (
+                          <span key={i} className="w-4 h-4 rounded-full ring-1 ring-black/20" style={{ background: c }} />
+                        ))}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold truncate">{t.name}</div>
+                        <div className="text-[10px] truncate" style={{ color: 'var(--muted)' }}>{t.subtitle}</div>
+                      </div>
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             <button
               onClick={handleSnapshotAll}
-              title="Black Friday / Sezon indirimi öncesi tüm fiyatları dondur"
-              className="px-3.5 py-2 rounded-full bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.07] text-xs font-medium text-[#F5F2EB] flex items-center gap-1.5 cursor-pointer transition"
+              title="Sezon indirimi öncesi tüm fiyatları dondur"
+              className="px-3 py-2 rounded-full text-xs font-medium flex items-center gap-1.5 cursor-pointer transition"
+              style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
             >
-              <Camera className="w-3.5 h-3.5 text-[#10B981]" />
-              <span className="hidden lg:inline">Fiyat Dondur</span>
+              <Camera className="w-3.5 h-3.5" style={{ color: 'var(--accent)' }} />
+              <span className="hidden xl:inline">Dondur</span>
             </button>
+
             <button
-              onClick={() => setCurrency((c) => (c === 'TRY' ? 'USD' : 'TRY'))}
-              className="px-3.5 py-2 rounded-full bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.07] font-mono-num text-xs font-medium cursor-pointer transition"
+              onClick={cycleCurrency}
+              title="TL / USD / Gram Altın geçişi"
+              className="px-3.5 py-2 rounded-full font-mono-num text-xs font-semibold cursor-pointer transition"
+              style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
             >
-              {currency}
+              {currency === 'GOLD' ? 'ALTIN' : currency}
             </button>
           </div>
         </div>
       </header>
 
       {/* Main Content Canvas */}
-      <main className="max-w-[1440px] w-full mx-auto px-6 pt-6 flex-1">
-        {/* Editorial Hero Strip & Folder Pills */}
+      <main className="relative z-10 max-w-[1440px] w-full mx-auto px-6 pt-7 flex-1">
+        {/* Hero Strip & Folder Pills */}
         <div className="flex flex-wrap items-end justify-between gap-4 mb-6">
           <div>
-            <h1 className="font-editorial text-4xl text-[#F5F2EB] leading-none">
+            <motion.h1
+              key={activeTab}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ type: 'spring', stiffness: 320, damping: 28 }}
+              className="font-editorial text-4xl sm:text-5xl leading-none"
+            >
               {activeTab === 'gallery' && 'Koleksiyon & Lookbook'}
               {activeTab === 'radar' && 'Canlı Fırsat Radarı'}
               {activeTab === 'shared' && 'Metehan × İlayda Ortak Pano'}
-              {activeTab === 'orders' && 'Siparişler & 14 Gün İade Koruması'}
-            </h1>
-            <p className="text-xs text-[#8F96A3] mt-1.5">
+              {activeTab === 'moodboard' && 'Kombin & Ev Moodboard'}
+              {activeTab === 'orders' && 'Siparişler & 14 Gün Koruması'}
+            </motion.h1>
+            <p className="text-xs mt-2" style={{ color: 'var(--muted)' }}>
               {activeTab === 'gallery' &&
                 `${folderProducts.length} takip edilen parça • Sepet Sıfır ${fmtPrice(basketTotals.newSum)}${
                   basketTotals.diff > 0 ? ` • 2. El Karma ile ${fmtPrice(basketTotals.diff)} tasarruf` : ''
@@ -492,49 +693,63 @@ export default function App() {
               {activeTab === 'radar' &&
                 'Gerçek dip yapanlar, stoğa dönen bedenler, ucuz 2. el fırsatları ve 14 gün iade düşüşleri.'}
               {activeTab === 'shared' &&
-                'Telefondan veya PC’den eklenen parçalara tek tıkla Al / Bekle / Pas oyu verin.'}
+                'İkiniz de telefondan/PC’den tek dokunuşla Al / Bekle / Pas oyu verin; bütçe çubuğu canlı güncellenir.'}
+              {activeTab === 'moodboard' &&
+                `Görsel stil & bütçe kolajı • ${moodProducts.length} parça toplam: ${fmtPrice(
+                  moodProducts.reduce((a, b) => a + (b.best_new_try || 0), 0)
+                )}`}
               {activeTab === 'orders' &&
-                'Aldığın ürün 14 gün içinde indirime girerse anında iade + yeniden alım kârını hesaplar.'}
+                'Aldığın ürün 14 gün içinde ucuzlarsa anında iade + yeniden alım kârını hesaplar.'}
             </p>
           </div>
 
           {(activeTab === 'gallery' || activeTab === 'shared') && (
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
-              <button
-                onClick={() => setActiveFolder(null)}
-                className={`px-4 py-1.5 rounded-full text-xs font-medium cursor-pointer transition shrink-0 ${
-                  activeFolder === null
-                    ? 'bg-[#F5F2EB] text-[#090A0C]'
-                    : 'bg-white/[0.05] text-[#9AA2AC] hover:text-white hover:bg-white/[0.09]'
-                }`}
-              >
-                Tümü ({products.length})
-              </button>
-              {folders.map((f) => (
-                <button
-                  key={f.id}
-                  onClick={() => setActiveFolder(f.id)}
-                  className={`px-4 py-1.5 rounded-full text-xs font-medium cursor-pointer transition shrink-0 ${
-                    activeFolder === f.id
-                      ? 'bg-[#F5F2EB] text-[#090A0C]'
-                      : 'bg-white/[0.05] text-[#9AA2AC] hover:text-white hover:bg-white/[0.09]'
-                  }`}
-                >
-                  {f.name} ({f.item_count})
-                </button>
-              ))}
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
+              {[
+                { id: null as number | null, name: 'Tümü', count: products.length },
+                ...folders.map((f) => ({ id: f.id as number | null, name: f.name, count: f.item_count })),
+              ].map((item) => {
+                const isAct = activeFolder === item.id;
+                return (
+                  <button
+                    key={String(item.id)}
+                    onClick={() => setActiveFolder(item.id)}
+                    className="relative px-4 py-1.5 rounded-full text-xs font-medium cursor-pointer shrink-0 transition"
+                    style={{ color: isAct ? 'var(--bg)' : 'var(--muted)' }}
+                  >
+                    {isAct && (
+                      <motion.span
+                        layoutId="folder-active-pill"
+                        transition={{ type: 'spring', stiffness: 450, damping: 32 }}
+                        className="absolute inset-0 rounded-full -z-10"
+                        style={{ background: 'var(--ink)' }}
+                      />
+                    )}
+                    {!isAct && (
+                      <span
+                        className="absolute inset-0 rounded-full -z-10"
+                        style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+                      />
+                    )}
+                    {item.name} ({item.count})
+                  </button>
+                );
+              })}
+
               {newFolderOpen ? (
                 <form onSubmit={handleCreateFolder} className="flex items-center gap-1.5">
                   <input
                     autoFocus
                     value={newFolderName}
                     onChange={(e) => setNewFolderName(e.target.value)}
-                    placeholder="Koleksiyon adı..."
-                    className="rounded-full bg-white/[0.07] border border-white/15 px-3 py-1 text-xs text-white focus:outline-none w-36"
+                    placeholder="Koleksiyon..."
+                    className="rounded-full px-3 py-1 text-xs focus:outline-none w-32"
+                    style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--ink)' }}
                   />
                   <button
                     type="submit"
-                    className="w-7 h-7 rounded-full bg-[#10B981] text-[#090A0C] flex items-center justify-center cursor-pointer"
+                    className="w-7 h-7 rounded-full flex items-center justify-center cursor-pointer"
+                    style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}
                   >
                     <Check className="w-3.5 h-3.5" />
                   </button>
@@ -542,7 +757,8 @@ export default function App() {
               ) : (
                 <button
                   onClick={() => setNewFolderOpen(true)}
-                  className="w-8 h-8 rounded-full bg-white/[0.05] hover:bg-white/[0.1] flex items-center justify-center text-[#9AA2AC] hover:text-white cursor-pointer transition shrink-0"
+                  className="w-8 h-8 rounded-full flex items-center justify-center cursor-pointer shrink-0"
+                  style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--muted)' }}
                   title="Yeni Koleksiyon"
                 >
                   <FolderPlus className="w-3.5 h-3.5" />
@@ -552,10 +768,81 @@ export default function App() {
           )}
         </div>
 
-        {/* Empty States */}
+        {/* Shared Monthly Budget Bar */}
+        {activeTab === 'shared' && (
+          <div className="mb-6 p-4 rounded-3xl glass-card flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div
+                className="w-10 h-10 rounded-2xl flex items-center justify-center"
+                style={{ background: 'color-mix(in srgb, var(--accent) 16%, transparent)', color: 'var(--accent)' }}
+              >
+                <Wallet className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-xs font-semibold">Ortak Aylık Bütçe Çubuğu</div>
+                <div className="text-[11px] font-mono-num" style={{ color: 'var(--muted)' }}>
+                  Onaylanan / Alınan: <strong style={{ color: 'var(--ink)' }}>{fmtTry(committedSharedSpend)}</strong> /{' '}
+                  {fmtTry(monthlyBudget)}
+                </div>
+              </div>
+            </div>
+            <div className="flex-1 min-w-[220px] max-w-md">
+              <div className="h-2.5 rounded-full overflow-hidden" style={{ background: 'var(--surface-2)' }}>
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${Math.min(100, (committedSharedSpend / Math.max(1, monthlyBudget)) * 100)}%` }}
+                  transition={{ type: 'spring', stiffness: 220, damping: 24 }}
+                  className="h-full rounded-full"
+                  style={{
+                    background: committedSharedSpend > monthlyBudget ? 'var(--danger)' : 'var(--accent)',
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Moodboard Selector Strip */}
+        {activeTab === 'moodboard' && products.length > 0 && (
+          <div className="mb-6 flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+            <span className="text-xs shrink-0" style={{ color: 'var(--muted)' }}>Panoya Ekle/Çıkar:</span>
+            {products.map((p) => {
+              const pinned = moodIds.includes(p.id);
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => toggleMood(p.id)}
+                  className="px-3 py-1.5 rounded-full text-xs shrink-0 cursor-pointer transition"
+                  style={{
+                    background: pinned ? 'var(--accent)' : 'var(--surface-2)',
+                    color: pinned ? 'var(--accent-ink)' : 'var(--ink)',
+                    border: '1px solid var(--border)',
+                  }}
+                >
+                  {pinned ? '✓ ' : '+ '}
+                  {p.title.slice(0, 26)}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Empty State */}
         {displayedList.length === 0 ? (
-          <div className="rounded-3xl bg-[#111317]/70 border border-white/[0.06] py-20 px-6 text-center max-w-xl mx-auto mt-10">
-            <div className="w-14 h-14 rounded-2xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center mx-auto mb-4 text-[#10B981]">
+          <motion.div
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ type: 'spring', stiffness: 280, damping: 26 }}
+            className="rounded-3xl glass-card py-20 px-6 text-center max-w-xl mx-auto mt-10"
+          >
+            <div
+              className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4"
+              style={{
+                background: 'color-mix(in srgb, var(--accent) 14%, transparent)',
+                color: 'var(--accent)',
+                border: '1px solid var(--border)',
+              }}
+            >
               {activeTab === 'radar' ? (
                 <Flame className="w-6 h-6" />
               ) : activeTab === 'orders' ? (
@@ -564,28 +851,33 @@ export default function App() {
                 <Sparkles className="w-6 h-6" />
               )}
             </div>
-            <div className="font-editorial text-2xl text-[#F5F2EB]">
+            <div className="font-editorial text-3xl">
               {activeTab === 'radar'
                 ? 'Şu an acil fırsat yok'
                 : activeTab === 'orders'
                 ? 'Henüz “Aldım” dediğin ürün yok'
                 : 'Koleksiyonun henüz boş'}
             </div>
-            <p className="text-xs text-[#8F96A3] mt-2 leading-relaxed max-w-sm mx-auto">
+            <p className="text-xs mt-2 leading-relaxed max-w-sm mx-auto" style={{ color: 'var(--muted)' }}>
               {activeTab === 'radar'
-                ? 'Gerçek fiyat düşüşü, takip ettiğin bedenin stoğa girmesi veya 14 gün iade fırsatı yakalandığında otomatik buraya düşer.'
+                ? 'Gerçek fiyat düşüşü, stoğa dönen beden veya 14 gün iade fırsatı yakalandığında otomatik buraya düşer.'
                 : activeTab === 'orders'
-                ? 'Bir ürün kartına tıklayıp “Aldım (14 Gün İade Koruması)” dediğinde burada takip edilir.'
+                ? 'Bir ürüne tıklayıp “Aldım (14 Gün Koru)” dediğinde burada geri sayımla takip edilir.'
                 : 'Yukarıdaki arama çubuğuna bir ürün adı yaz (örn. MacBook Air M4, Ninja Blender) ya da Zara / Flaw / Amazon / Sahibinden linki yapıştır.'}
             </p>
-          </div>
+          </motion.div>
         ) : (
-          /* Editorial Visual Lookbook Grid */
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-            {displayedList.map((p) => {
+          /* Spring-Animated Editorial Lookbook Grid */
+          <div
+            className={`grid gap-5 ${
+              activeTab === 'moodboard'
+                ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
+                : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+            }`}
+          >
+            {displayedList.map((p, idx) => {
               const isDip =
-                p.discount_verdict.status === 'GENUINE_DIP' ||
-                p.discount_verdict.status === 'GENUINE_DROP';
+                p.discount_verdict.status === 'GENUINE_DIP' || p.discount_verdict.status === 'GENUINE_DROP';
               const isFake = p.discount_verdict.status === 'INFLATED_FAKE';
               const snapDiffPct =
                 p.snapshot_price_try && p.snapshot_price_try > 0 && p.best_new_try > 0
@@ -602,13 +894,24 @@ export default function App() {
               const bothBuy = p.vote_metehan === 'buy' && p.vote_ilayda === 'buy';
 
               return (
-                <div
+                <motion.div
                   key={p.id}
+                  layout
+                  initial={{ opacity: 0, y: 18, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{
+                    type: 'spring',
+                    stiffness: 320,
+                    damping: 26,
+                    delay: Math.min(idx * 0.035, 0.28),
+                  }}
+                  whileHover={{ y: -6, scale: 1.012 }}
+                  whileTap={{ scale: 0.985 }}
                   onClick={() => setSelectedId(p.id)}
-                  className="group rounded-3xl bg-[#111317] border border-white/[0.06] hover:border-white/[0.16] overflow-hidden cursor-pointer transition-all duration-300 hover:-translate-y-1 flex flex-col shadow-lg shadow-black/30"
+                  className="group rounded-3xl glass-card overflow-hidden cursor-pointer flex flex-col"
                 >
-                  {/* Hero Visual Image */}
-                  <div className="relative aspect-[4/3] bg-gradient-to-br from-[#181C23] to-[#0E1014] overflow-hidden">
+                  {/* Hero Image */}
+                  <div className="relative aspect-[4/3] overflow-hidden" style={{ background: 'var(--surface-2)' }}>
                     {p.image_url ? (
                       <img
                         src={p.image_url}
@@ -616,51 +919,55 @@ export default function App() {
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                       />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center text-white/15">
+                      <div className="w-full h-full flex items-center justify-center opacity-20">
                         <ShoppingBag className="w-12 h-12" />
                       </div>
                     )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#111317] via-transparent to-black/35" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/30" />
 
-                    {/* Top Left Verdict Pill */}
+                    {/* Top Left Badges */}
                     <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
                       <span
-                        className={`px-2.5 py-1 rounded-full text-[10px] font-semibold backdrop-blur-md border ${
-                          isDip
-                            ? 'bg-[#10B981]/20 text-[#10B981] border-[#10B981]/40'
+                        className="px-2.5 py-1 rounded-full text-[10px] font-semibold backdrop-blur-md"
+                        style={{
+                          background: isDip
+                            ? 'rgba(16,185,129,0.28)'
                             : isFake
-                            ? 'bg-[#F43F5E]/20 text-[#F43F5E] border-[#F43F5E]/40'
-                            : 'bg-black/50 text-[#F5F2EB] border-white/15'
-                        }`}
+                            ? 'rgba(244,63,94,0.28)'
+                            : 'rgba(0,0,0,0.5)',
+                          color: isDip ? '#6EE7B7' : isFake ? '#FDA4AF' : '#F5F2EB',
+                          border: '1px solid rgba(255,255,255,0.16)',
+                        }}
                       >
                         {p.discount_verdict.badge}
                       </span>
                       {bothBuy && (
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-[#10B981] text-[#090A0C]">
+                        <span
+                          className="px-2.5 py-1 rounded-full text-[10px] font-bold"
+                          style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}
+                        >
                           İKİMİZ DE AL ✓
                         </span>
                       )}
                     </div>
 
-                    {/* Top Right Folder Micro-Tag */}
-                    <span className="absolute top-3 right-3 px-2.5 py-1 rounded-full text-[10px] bg-black/55 backdrop-blur-md text-[#C7CCD4] border border-white/10">
+                    <span className="absolute top-3 right-3 px-2.5 py-1 rounded-full text-[10px] bg-black/50 backdrop-blur-md text-white/90 border border-white/15">
                       {p.folder_name}
                     </span>
 
-                    {/* Bottom Image Overlay: Price */}
                     <div className="absolute bottom-3 left-4 right-4 flex items-end justify-between gap-2">
                       <div>
-                        <div className="font-mono-num text-xl font-bold text-[#F5F2EB] leading-none">
+                        <div className="font-mono-num text-xl font-bold text-white leading-none drop-shadow">
                           {p.best_new_try > 0 ? fmtPrice(p.best_new_try) : '—'}
                         </div>
                         {p.unit_price && (
-                          <div className="text-[10px] font-mono-num text-[#10B981] mt-1">
+                          <div className="text-[10px] font-mono-num text-emerald-300 mt-1">
                             10 {p.unit_price.unit}: {p.unit_price.price_per_10_try} ₺
                           </div>
                         )}
                       </div>
                       {p.best_used_try && (
-                        <span className="px-2.5 py-1 rounded-full bg-[#3B82F6]/20 border border-[#3B82F6]/40 backdrop-blur-md font-mono-num text-[10px] font-semibold text-[#60A5FA]">
+                        <span className="px-2.5 py-1 rounded-full bg-blue-500/25 border border-blue-400/40 backdrop-blur-md font-mono-num text-[10px] font-semibold text-blue-200">
                           2. El {fmtPrice(p.best_used_try)}
                         </span>
                       )}
@@ -669,61 +976,61 @@ export default function App() {
 
                   {/* Card Body */}
                   <div className="p-4 flex-1 flex flex-col gap-3">
-                    <div className="text-sm font-medium text-[#F5F2EB] line-clamp-2 leading-snug">
-                      {p.title}
-                    </div>
+                    <div className="text-sm font-medium line-clamp-2 leading-snug">{p.title}</div>
 
-                    {/* Snapshot Comparison */}
                     {snapDiffPct !== null && Math.abs(snapDiffPct) >= 1 && (
                       <div
-                        className={`text-[11px] font-mono-num px-2.5 py-1 rounded-xl w-fit ${
-                          snapDiffPct < 0
-                            ? 'bg-[#10B981]/10 text-[#10B981]'
-                            : 'bg-[#F43F5E]/10 text-[#F43F5E]'
-                        }`}
+                        className="text-[11px] font-mono-num px-2.5 py-1 rounded-xl w-fit"
+                        style={{
+                          background: snapDiffPct < 0 ? 'rgba(16,185,129,0.14)' : 'rgba(244,63,94,0.14)',
+                          color: snapDiffPct < 0 ? 'var(--accent)' : 'var(--danger)',
+                        }}
                       >
                         Snapshot’a göre {snapDiffPct > 0 ? '+' : ''}
                         {snapDiffPct.toFixed(1)}%
                       </div>
                     )}
 
-                    {/* 14-Day Refund Protection Banner */}
                     {refundDaysLeft !== null && (
-                      <div className="p-2.5 rounded-2xl bg-white/[0.04] border border-white/[0.06] space-y-1.5">
+                      <div className="p-2.5 rounded-2xl space-y-1.5" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
                         <div className="flex items-center justify-between text-[11px]">
-                          <span className="text-[#8F96A3] flex items-center gap-1">
-                            <Clock className="w-3 h-3 text-[#10B981]" />
-                            İade koruması: <strong className="text-[#F5F2EB]">{refundDaysLeft} gün</strong>
+                          <span className="flex items-center gap-1" style={{ color: 'var(--muted)' }}>
+                            <Clock className="w-3 h-3" style={{ color: 'var(--accent)' }} />
+                            İade: <strong style={{ color: 'var(--ink)' }}>{refundDaysLeft} gün</strong>
                           </span>
-                          <span className="font-mono-num text-[#8F96A3]">
+                          <span className="font-mono-num" style={{ color: 'var(--muted)' }}>
                             Alış: {fmtTry(p.purchased_price_try || 0)}
                           </span>
                         </div>
-                        <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
+                        <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--border)' }}>
                           <div
-                            className="h-full rounded-full bg-[#10B981]"
-                            style={{ width: `${Math.min(100, (refundDaysLeft / 14) * 100)}%` }}
+                            className="h-full rounded-full"
+                            style={{
+                              width: `${Math.min(100, (refundDaysLeft / 14) * 100)}%`,
+                              background: 'var(--accent)',
+                            }}
                           />
                         </div>
                         {refundProfit > 25 && (
-                          <div className="text-[11px] font-semibold text-[#10B981]">
-                            ⚡ İade edip yeniden alırsan {fmtTry(refundProfit)} kârdasın!
+                          <div className="text-[11px] font-semibold" style={{ color: 'var(--accent)' }}>
+                            ⚡ İade edip yeniden alırsan {fmtTry(refundProfit)} kâr!
                           </div>
                         )}
                       </div>
                     )}
 
-                    {/* Size Bubbles Preview */}
                     {p.sizes.length > 0 && (
                       <div className="flex flex-wrap gap-1">
                         {p.sizes.slice(0, 6).map((s) => (
                           <span
                             key={s.size}
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-mono-num ${
-                              s.in_stock
-                                ? 'bg-[#10B981]/15 text-[#10B981]'
-                                : 'bg-white/[0.04] text-[#606774] line-through'
-                            }`}
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-mono-num ${!s.in_stock ? 'line-through opacity-45' : ''}`}
+                            style={{
+                              background: s.in_stock
+                                ? 'color-mix(in srgb, var(--accent) 16%, transparent)'
+                                : 'var(--surface-2)',
+                              color: s.in_stock ? 'var(--accent)' : 'var(--muted)',
+                            }}
                           >
                             {s.size}
                           </span>
@@ -731,67 +1038,63 @@ export default function App() {
                       </div>
                     )}
 
-                    {/* Shared Board Inline Voting */}
                     {activeTab === 'shared' ? (
                       <div
-                        className="mt-auto pt-2 border-t border-white/[0.06] space-y-2"
+                        className="mt-auto pt-2.5 space-y-2"
+                        style={{ borderTop: '1px solid var(--border)' }}
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <div className="flex items-center justify-between gap-2 text-[11px]">
-                          <span className="text-[#8F96A3]">Metehan:</span>
-                          <div className="flex gap-1">
-                            {(['buy', 'wait', 'pass'] as const).map((v) => (
-                              <button
-                                key={v}
-                                onClick={() => handleVote(p.id, 'metehan', p.vote_metehan === v ? '' : v)}
-                                className={`px-2.5 py-0.5 rounded-full border text-[10px] font-medium cursor-pointer transition ${
-                                  p.vote_metehan === v
-                                    ? voteLabel(v).cls
-                                    : 'border-white/10 text-[#8F96A3] hover:text-white'
-                                }`}
-                              >
-                                {voteLabel(v).text}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between gap-2 text-[11px]">
-                          <span className="text-[#8F96A3]">İlayda:</span>
-                          <div className="flex gap-1">
-                            {(['buy', 'wait', 'pass'] as const).map((v) => (
-                              <button
-                                key={v}
-                                onClick={() => handleVote(p.id, 'ilayda', p.vote_ilayda === v ? '' : v)}
-                                className={`px-2.5 py-0.5 rounded-full border text-[10px] font-medium cursor-pointer transition ${
-                                  p.vote_ilayda === v
-                                    ? voteLabel(v).cls
-                                    : 'border-white/10 text-[#8F96A3] hover:text-white'
-                                }`}
-                              >
-                                {voteLabel(v).text}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
+                        {(['metehan', 'ilayda'] as const).map((who) => {
+                          const cur = who === 'metehan' ? p.vote_metehan : p.vote_ilayda;
+                          return (
+                            <div key={who} className="flex items-center justify-between gap-2 text-[11px]">
+                              <span style={{ color: 'var(--muted)' }}>{who === 'ilayda' ? 'İlayda' : 'Metehan'}</span>
+                              <div className="flex gap-1">
+                                {(['buy', 'wait', 'pass'] as const).map((v) => {
+                                  const vl = voteLabel(v);
+                                  const act = cur === v;
+                                  return (
+                                    <button
+                                      key={v}
+                                      onClick={() => handleVote(p.id, who, act ? '' : v)}
+                                      className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold cursor-pointer transition"
+                                      style={{
+                                        background: act ? vl.bg : 'transparent',
+                                        color: act ? vl.color : 'var(--muted)',
+                                        border: `1px solid ${act ? vl.color : 'var(--border)'}`,
+                                      }}
+                                    >
+                                      {vl.text}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
                         {p.shared_note && (
-                          <div className="text-[11px] text-[#C7CCD4] italic truncate">“{p.shared_note}”</div>
+                          <div className="text-[11px] italic truncate" style={{ color: 'var(--muted)' }}>
+                            “{p.shared_note}”
+                          </div>
                         )}
                       </div>
                     ) : (
-                      /* Subtle Footer Meta */
-                      <div className="mt-auto pt-2 border-t border-white/[0.06] flex items-center justify-between text-[11px] text-[#8F96A3]">
+                      <div
+                        className="mt-auto pt-2.5 flex items-center justify-between text-[11px]"
+                        style={{ borderTop: '1px solid var(--border)', color: 'var(--muted)' }}
+                      >
                         <span className="flex items-center gap-1">
-                          <ShieldCheck className="w-3.5 h-3.5 text-[#10B981]" />
+                          <ShieldCheck className="w-3.5 h-3.5" style={{ color: 'var(--accent)' }} />
                           Güven %{p.avg_trust_score}
                         </span>
                         <div className="flex items-center gap-1.5">
                           {p.vote_metehan && (
-                            <span className={`px-2 py-0.5 rounded-full border text-[9px] ${mv.cls}`}>
+                            <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold" style={{ background: mv.bg, color: mv.color }}>
                               M: {mv.text}
                             </span>
                           )}
                           {p.vote_ilayda && (
-                            <span className={`px-2 py-0.5 rounded-full border text-[9px] ${iv.cls}`}>
+                            <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold" style={{ background: iv.bg, color: iv.color }}>
                               İ: {iv.text}
                             </span>
                           )}
@@ -799,21 +1102,22 @@ export default function App() {
                       </div>
                     )}
                   </div>
-                </div>
+                </motion.div>
               );
             })}
           </div>
         )}
       </main>
 
-      {/* Bottom Floating Glass Pill Dock */}
+      {/* Bottom Floating Liquid Glass Pill Dock with Framer Motion layoutId */}
       <nav className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40">
-        <div className="flex items-center gap-1 p-1.5 rounded-full bg-[#121419]/85 backdrop-blur-2xl border border-white/12 shadow-2xl shadow-black/60">
+        <div className="flex items-center gap-1 p-1.5 rounded-full glass-panel shadow-2xl">
           {(
             [
               { id: 'gallery', label: 'Galeri', icon: LayoutGrid, badge: 0 },
               { id: 'radar', label: 'Radar', icon: Flame, badge: radarProducts.length },
               { id: 'shared', label: 'Ortak', icon: Users, badge: 0 },
+              { id: 'moodboard', label: 'Moodboard', icon: Layers, badge: 0 },
               { id: 'orders', label: 'Sipariş', icon: Package, badge: purchasedProducts.length },
             ] as const
           ).map((item) => {
@@ -823,19 +1127,26 @@ export default function App() {
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
-                className={`relative px-4 py-2 rounded-full text-xs font-medium flex items-center gap-2 cursor-pointer transition ${
-                  active
-                    ? 'bg-[#F5F2EB] text-[#090A0C] shadow-md'
-                    : 'text-[#9AA2AC] hover:text-white hover:bg-white/[0.06]'
-                }`}
+                className="relative px-4 py-2 rounded-full text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition"
+                style={{ color: active ? 'var(--bg)' : 'var(--muted)' }}
               >
+                {active && (
+                  <motion.span
+                    layoutId="dock-active-pill"
+                    transition={{ type: 'spring', stiffness: 440, damping: 32 }}
+                    className="absolute inset-0 rounded-full -z-10 shadow-md"
+                    style={{ background: 'var(--ink)' }}
+                  />
+                )}
                 <Icon className="w-3.5 h-3.5" />
                 <span>{item.label}</span>
                 {item.badge > 0 && (
                   <span
-                    className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono-num font-bold ${
-                      active ? 'bg-[#090A0C]/15 text-[#090A0C]' : 'bg-[#10B981]/20 text-[#10B981]'
-                    }`}
+                    className="px-1.5 rounded-full text-[10px] font-mono-num font-bold"
+                    style={{
+                      background: active ? 'rgba(0,0,0,0.18)' : 'color-mix(in srgb, var(--accent) 22%, transparent)',
+                      color: active ? 'var(--bg)' : 'var(--accent)',
+                    }}
                   >
                     {item.badge}
                   </span>
@@ -843,10 +1154,11 @@ export default function App() {
               </button>
             );
           })}
-          <div className="w-px h-5 bg-white/10 mx-1" />
+          <div className="w-px h-5 mx-1" style={{ background: 'var(--border-strong)' }} />
           <button
             onClick={() => setShowSettings(true)}
-            className="px-3.5 py-2 rounded-full text-xs font-medium text-[#9AA2AC] hover:text-white hover:bg-white/[0.06] flex items-center gap-1.5 cursor-pointer transition"
+            className="px-3.5 py-2 rounded-full text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition"
+            style={{ color: 'var(--muted)' }}
           >
             <Settings className="w-3.5 h-3.5" />
             <span>Ayarlar</span>
@@ -854,406 +1166,511 @@ export default function App() {
         </div>
       </nav>
 
-      {/* Cinematic Editorial Product Detail Modal */}
-      {selected && (
-        <div
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 sm:p-6"
-          onClick={() => setSelectedId(null)}
-        >
-          <div
-            className="w-full max-w-5xl max-h-[90vh] bg-[#101216] border border-white/10 rounded-3xl overflow-hidden shadow-2xl flex flex-col"
-            onClick={(e) => e.stopPropagation()}
+      {/* Spring-Animated Cinematic Product Detail Modal */}
+      <AnimatePresence>
+        {selected && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-4 sm:p-6"
+            onClick={() => setSelectedId(null)}
           >
-            {/* Modal Top Bar */}
-            <div className="px-6 py-4 border-b border-white/[0.07] flex items-center justify-between gap-4">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <span className="px-3 py-1 rounded-full bg-white/[0.06] text-[11px] text-[#C7CCD4] shrink-0">
-                  {selected.folder_name}
-                </span>
-                <span className="text-sm font-medium text-[#F5F2EB] truncate">{selected.title}</span>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.94, y: 18 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 14 }}
+              transition={{ type: 'spring', stiffness: 360, damping: 30 }}
+              className="w-full max-w-5xl max-h-[90vh] glass-card rounded-3xl overflow-hidden shadow-2xl flex flex-col"
+              style={{ background: 'var(--surface-solid)' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-6 py-4 flex items-center justify-between gap-4" style={{ borderBottom: '1px solid var(--border)' }}>
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="px-3 py-1 rounded-full text-[11px] shrink-0" style={{ background: 'var(--surface-2)' }}>
+                    {selected.folder_name}
+                  </span>
+                  <span className="text-sm font-medium truncate">{selected.title}</span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => handleRefresh(selected)}
+                    disabled={refreshingId === selected.id}
+                    className="px-3.5 py-1.5 rounded-full text-xs font-medium flex items-center gap-1.5 cursor-pointer"
+                    style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${refreshingId === selected.id ? 'animate-spin' : ''}`} />
+                    Tara
+                  </button>
+                  <button
+                    onClick={async () => {
+                      await api.deleteProduct(selected.id);
+                      setSelectedId(null);
+                      await loadAll();
+                      notify('Ürün takipten çıkarıldı.');
+                    }}
+                    className="w-8 h-8 rounded-full flex items-center justify-center cursor-pointer"
+                    style={{ background: 'rgba(244,63,94,0.14)', color: 'var(--danger)' }}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => setSelectedId(null)}
+                    className="w-8 h-8 rounded-full flex items-center justify-center cursor-pointer"
+                    style={{ background: 'var(--surface-2)', color: 'var(--muted)' }}
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  onClick={() => handleRefresh(selected)}
-                  disabled={refreshingId === selected.id}
-                  className="px-3.5 py-1.5 rounded-full bg-white/[0.06] hover:bg-white/[0.12] text-xs font-medium flex items-center gap-1.5 cursor-pointer transition"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${refreshingId === selected.id ? 'animate-spin' : ''}`} />
-                  Tara
-                </button>
-                <button
-                  onClick={async () => {
-                    await api.deleteProduct(selected.id);
-                    setSelectedId(null);
-                    await loadAll();
-                    notify('Ürün takipten çıkarıldı.');
-                  }}
-                  className="w-8 h-8 rounded-full bg-[#F43F5E]/10 hover:bg-[#F43F5E]/20 text-[#F43F5E] flex items-center justify-center cursor-pointer transition"
-                  title="Takipten Çıkar"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={() => setSelectedId(null)}
-                  className="w-8 h-8 rounded-full bg-white/[0.06] hover:bg-white/[0.12] text-[#9AA2AC] hover:text-white flex items-center justify-center cursor-pointer transition"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
 
-            {/* Modal Body */}
-            <div className="p-6 overflow-y-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
-              {/* Left Column: Hero Image + Primary Actions + Votes + Sizes */}
-              <div className="lg:col-span-5 space-y-4">
-                <div className="aspect-[4/3] rounded-2xl overflow-hidden bg-[#181C23] border border-white/[0.06]">
-                  {selected.image_url ? (
-                    <img src={selected.image_url} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-white/15">
-                      <ShoppingBag className="w-16 h-16" />
+              <div className="p-6 overflow-y-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Left Column */}
+                <div className="lg:col-span-5 space-y-4">
+                  <div className="aspect-[4/3] rounded-2xl overflow-hidden" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+                    {selected.image_url ? (
+                      <img src={selected.image_url} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center opacity-20">
+                        <ShoppingBag className="w-16 h-16" />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <motion.button
+                      whileTap={{ scale: 0.96 }}
+                      onClick={() => api.openExternal(selected.quick_checkout_url || selected.primary_url)}
+                      className="py-3 px-4 rounded-2xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                      style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}
+                    >
+                      <Zap className="w-4 h-4" />
+                      Hızlı Alım / Sepet
+                    </motion.button>
+                    <motion.button
+                      whileTap={{ scale: 0.96 }}
+                      onClick={() => handleMarkPurchased(selected)}
+                      className="py-3 px-4 rounded-2xl text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
+                      style={{
+                        background:
+                          selected.purchased_price_try !== null
+                            ? 'color-mix(in srgb, var(--accent) 16%, transparent)'
+                            : 'var(--surface-2)',
+                        color: selected.purchased_price_try !== null ? 'var(--accent)' : 'var(--ink)',
+                        border: '1px solid var(--border)',
+                      }}
+                    >
+                      <Package className="w-4 h-4" />
+                      {selected.purchased_price_try !== null ? '14 Gün Korumada ✓' : 'Aldım (14 Gün Koru)'}
+                    </motion.button>
+                  </div>
+
+                  {/* Inditex Wave & SINT Timing Card */}
+                  {waveInfo && (
+                    <div className="p-3.5 rounded-2xl space-y-1" style={{ background: 'color-mix(in srgb, var(--accent) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 26%, transparent)' }}>
+                      <div className="text-[11px] font-bold" style={{ color: 'var(--accent)' }}>
+                        ✦ {waveInfo.wave}
+                      </div>
+                      <div className="text-[11px] leading-relaxed" style={{ color: 'var(--muted)' }}>
+                        {waveInfo.advice}
+                      </div>
                     </div>
                   )}
-                </div>
 
-                {/* Primary CTAs */}
-                <div className="grid grid-cols-2 gap-2.5">
-                  <button
-                    onClick={() =>
-                      api.openExternal(selected.quick_checkout_url || selected.primary_url)
-                    }
-                    className="py-3 px-4 rounded-2xl bg-[#10B981] hover:bg-[#0EA472] text-[#090A0C] text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition"
-                  >
-                    <Zap className="w-4 h-4" />
-                    Hızlı Alım / Sepet
-                  </button>
-                  <button
-                    onClick={() => handleMarkPurchased(selected)}
-                    className={`py-3 px-4 rounded-2xl text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer border transition ${
-                      selected.purchased_price_try !== null
-                        ? 'bg-[#10B981]/15 border-[#10B981]/40 text-[#10B981]'
-                        : 'bg-white/[0.05] hover:bg-white/[0.1] border-white/10 text-[#F5F2EB]'
-                    }`}
-                  >
-                    <Package className="w-4 h-4" />
-                    {selected.purchased_price_try !== null ? '14 Gün Korumada ✓' : 'Aldım (14 Gün Koru)'}
-                  </button>
-                </div>
-
-                {/* Metehan × İlayda Collaborative Voting */}
-                <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.06] space-y-3">
-                  <div className="text-xs font-semibold text-[#F5F2EB] flex items-center gap-1.5">
-                    <Heart className="w-3.5 h-3.5 text-[#F43F5E]" />
-                    Metehan × İlayda Ortak Karar
-                  </div>
-                  {(['metehan', 'ilayda'] as const).map((who) => {
-                    const cur = who === 'metehan' ? selected.vote_metehan : selected.vote_ilayda;
-                    return (
-                      <div key={who} className="flex items-center justify-between text-xs">
-                        <span className="text-[#8F96A3] capitalize">{who === 'ilayda' ? 'İlayda' : 'Metehan'}</span>
-                        <div className="flex gap-1.5">
-                          {(['buy', 'wait', 'pass'] as const).map((v) => (
-                            <button
-                              key={v}
-                              onClick={() => handleVote(selected.id, who, cur === v ? '' : v)}
-                              className={`px-3 py-1 rounded-full border text-[11px] font-medium cursor-pointer transition ${
-                                cur === v
-                                  ? voteLabel(v).cls
-                                  : 'border-white/10 text-[#8F96A3] hover:text-white'
-                              }`}
-                            >
-                              {voteLabel(v).text}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-                  <div className="flex gap-2 pt-1">
-                    <input
-                      value={noteInput}
-                      onChange={(e) => setNoteInput(e.target.value)}
-                      placeholder="Kısa ortak not (örn. M beden indirimde alalım)..."
-                      className="flex-1 rounded-xl bg-[#090A0C] border border-white/[0.08] px-3 py-1.5 text-xs text-[#F5F2EB] focus:outline-none focus:border-[#10B981]"
-                    />
-                    <button
-                      onClick={() => {
-                        handleVote(selected.id, 'metehan', selected.vote_metehan, noteInput);
-                        notify('Ortak not kaydedildi.');
-                      }}
-                      className="px-3 py-1.5 rounded-xl bg-white/[0.08] hover:bg-white/[0.14] text-xs font-medium cursor-pointer"
-                    >
-                      Kaydet
-                    </button>
-                  </div>
-                </div>
-
-                {/* Size Stock Tracker */}
-                {selected.sizes.length > 0 && (
-                  <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.06] space-y-2.5">
-                    <div className="text-xs font-semibold text-[#F5F2EB]">
-                      Beden Stok Takibi (Alarm için tıkla)
+                  {/* Collaborative Voting */}
+                  <div className="p-4 rounded-2xl space-y-3" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+                    <div className="text-xs font-semibold flex items-center gap-1.5">
+                      <Heart className="w-3.5 h-3.5" style={{ color: 'var(--danger)' }} />
+                      Metehan × İlayda Ortak Karar
                     </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {selected.sizes.map((s) => {
-                        const tracked = selected.tracked_sizes
-                          .toUpperCase()
-                          .split(',')
-                          .map((x) => x.trim())
-                          .includes(s.size.toUpperCase());
-                        return (
-                          <button
-                            key={s.size}
-                            onClick={() => handleToggleSize(selected, s.size)}
-                            className={`px-3 py-1 rounded-full text-xs font-mono-num border cursor-pointer transition ${
-                              tracked
-                                ? 'bg-[#10B981] text-[#090A0C] border-[#10B981] font-bold'
-                                : s.in_stock
-                                ? 'bg-[#10B981]/10 text-[#10B981] border-[#10B981]/30 hover:bg-[#10B981]/20'
-                                : 'bg-white/[0.03] text-[#606774] border-white/[0.07] line-through hover:text-white'
-                            }`}
-                          >
-                            {s.size}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Right Column: Price Intelligence, Chart, Installment Calculator, Offers, 2nd-Hand */}
-              <div className="lg:col-span-7 space-y-5">
-                {/* Big Price + Verdict + Target */}
-                <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex flex-wrap items-center justify-between gap-4">
-                  <div>
-                    <div className="text-[11px] uppercase tracking-wider text-[#8F96A3]">
-                      En Ucuz Sıfır Piyasa
-                    </div>
-                    <div className="font-mono-num text-3xl font-bold text-[#F5F2EB] mt-1">
-                      {selected.best_new_try > 0 ? fmtPrice(selected.best_new_try) : '—'}
-                    </div>
-                    <div className="text-xs text-[#8F96A3] mt-1.5">{selected.discount_verdict.explanation}</div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <div className="flex items-center gap-1.5 rounded-full bg-[#090A0C] border border-white/10 px-3 py-1.5">
-                      <Bell className="w-3.5 h-3.5 text-[#10B981]" />
-                      <input
-                        value={targetInput}
-                        onChange={(e) => setTargetInput(e.target.value)}
-                        placeholder="Hedef ₺"
-                        className="w-20 bg-transparent text-xs font-mono-num text-[#F5F2EB] focus:outline-none"
-                      />
-                    </div>
-                    <button
-                      onClick={async () => {
-                        const v = targetInput.trim() ? Number(targetInput) : null;
-                        await api.setTargetPrice(selected.id, v);
-                        await loadAll();
-                        notify(v ? `Hedef fiyat ${fmtTry(v)} olarak ayarlandı.` : 'Hedef fiyat temizlendi.');
-                      }}
-                      className="px-3.5 py-1.5 rounded-full bg-[#F5F2EB] text-[#090A0C] text-xs font-semibold cursor-pointer"
-                    >
-                      Alarm Kur
-                    </button>
-                  </div>
-                </div>
-
-                {/* Price History Chart */}
-                <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.06]">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-semibold text-[#F5F2EB] flex items-center gap-1.5">
-                      <TrendingDown className="w-3.5 h-3.5 text-[#10B981]" />
-                      Fiyat Geçmişi ({currency})
-                    </span>
-                    <span className="text-[11px] font-mono-num text-[#8F96A3]">
-                      Dip: {fmtPrice(selected.discount_verdict.min_all_try)} • Ort:{' '}
-                      {fmtPrice(selected.discount_verdict.avg_30d_try)}
-                    </span>
-                  </div>
-                  <PriceChart
-                    history={selected.history}
-                    currency={currency}
-                    targetPriceTry={selected.target_price_try}
-                    currentUsdRate={rates.usd_try}
-                  />
-                </div>
-
-                {/* Installment + Shipping Real Cost Calculator */}
-                {selected.best_new_try > 0 && (
-                  <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.06] space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-xs font-semibold text-[#F5F2EB] flex items-center gap-1.5">
-                        <CreditCard className="w-3.5 h-3.5 text-[#3B82F6]" />
-                        Taksit & Kargo Gerçek Maliyet
-                      </span>
-                      <div className="flex items-center gap-2 text-[11px] text-[#8F96A3]">
-                        <span>Kargo ₺:</span>
-                        <input
-                          type="number"
-                          value={shippingCost}
-                          onChange={(e) => setShippingCost(Number(e.target.value) || 0)}
-                          className="w-16 rounded-lg bg-[#090A0C] border border-white/10 px-2 py-0.5 font-mono-num text-[#F5F2EB]"
-                        />
-                        <span>Aylık %:</span>
-                        <input
-                          type="number"
-                          step="0.2"
-                          value={installmentRate}
-                          onChange={(e) => setInstallmentRate(Number(e.target.value) || 0)}
-                          className="w-14 rounded-lg bg-[#090A0C] border border-white/10 px-2 py-0.5 font-mono-num text-[#F5F2EB]"
-                        />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-4 gap-2">
-                      {[1, 3, 6, 9].map((m) => {
-                        const base = selected.best_new_try + shippingCost;
-                        const total = m === 1 ? base : base * (1 + (installmentRate / 100) * (m - 1));
-                        const monthly = total / m;
-                        return (
-                          <div
-                            key={m}
-                            className="p-2.5 rounded-xl bg-[#090A0C]/70 border border-white/[0.06] text-center"
-                          >
-                            <div className="text-[10px] text-[#8F96A3]">{m === 1 ? 'Peşin' : `${m} Taksit`}</div>
-                            <div className="font-mono-num text-xs font-bold text-[#F5F2EB] mt-0.5">
-                              {fmtTry(monthly)}
-                              {m > 1 ? '/ay' : ''}
-                            </div>
-                            <div className="font-mono-num text-[10px] text-[#8F96A3] mt-0.5">
-                              Top: {fmtTry(total)}
-                            </div>
+                    {(['metehan', 'ilayda'] as const).map((who) => {
+                      const cur = who === 'metehan' ? selected.vote_metehan : selected.vote_ilayda;
+                      return (
+                        <div key={who} className="flex items-center justify-between text-xs">
+                          <span style={{ color: 'var(--muted)' }}>{who === 'ilayda' ? 'İlayda' : 'Metehan'}</span>
+                          <div className="flex gap-1.5">
+                            {(['buy', 'wait', 'pass'] as const).map((v) => {
+                              const vl = voteLabel(v);
+                              const act = cur === v;
+                              return (
+                                <button
+                                  key={v}
+                                  onClick={() => handleVote(selected.id, who, act ? '' : v)}
+                                  className="px-3 py-1 rounded-full text-[11px] font-semibold cursor-pointer transition"
+                                  style={{
+                                    background: act ? vl.bg : 'transparent',
+                                    color: act ? vl.color : 'var(--muted)',
+                                    border: `1px solid ${act ? vl.color : 'var(--border)'}`,
+                                  }}
+                                >
+                                  {vl.text}
+                                </button>
+                              );
+                            })}
                           </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Retail Offers */}
-                <div className="space-y-2">
-                  <div className="text-xs font-semibold text-[#F5F2EB]">
-                    Mağaza Teklifleri ({selected.offers.length})
-                  </div>
-                  {selected.offers.map((o) => (
-                    <div
-                      key={o.id}
-                      className="px-4 py-3 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-between gap-3"
-                    >
-                      <div className="min-w-0">
-                        <div className="text-xs font-semibold text-[#F5F2EB]">{o.store_name}</div>
-                        <div className="text-[11px] text-[#8F96A3]">
-                          {o.seller_name} • Güven %{o.trust_score}
                         </div>
-                      </div>
-                      <div className="flex items-center gap-3 shrink-0">
-                        <span className="font-mono-num text-sm font-bold text-[#10B981]">
-                          {fmtPrice(o.price_try + o.shipping_try)}
-                        </span>
-                        <button
-                          onClick={() => api.openExternal(o.url)}
-                          className="p-2 rounded-full bg-white/[0.06] hover:bg-white/[0.14] text-[#F5F2EB] cursor-pointer"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* 2nd Hand Market */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-[#60A5FA]">
-                      2. El Piyasa ({selected.used_listings.length})
-                    </span>
-                    <button
-                      onClick={() => setShowManualUsed((v) => !v)}
-                      className="text-[11px] text-[#60A5FA] hover:underline cursor-pointer"
-                    >
-                      + Manuel 2. El İlan Ekle
-                    </button>
-                  </div>
-
-                  {showManualUsed && (
-                    <form
-                      onSubmit={handleAddManualUsed}
-                      className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/10 grid grid-cols-2 gap-2 text-xs"
-                    >
+                      );
+                    })}
+                    <div className="flex gap-2 pt-1">
                       <input
-                        placeholder="İlan başlığı"
-                        value={manualUsed.title}
-                        onChange={(e) => setManualUsed({ ...manualUsed, title: e.target.value })}
-                        className="col-span-2 rounded-xl bg-[#090A0C] border border-white/10 px-3 py-1.5 text-white"
-                      />
-                      <input
-                        placeholder="Fiyat (₺)"
-                        type="number"
-                        value={manualUsed.price_try}
-                        onChange={(e) => setManualUsed({ ...manualUsed, price_try: e.target.value })}
-                        className="rounded-xl bg-[#090A0C] border border-white/10 px-3 py-1.5 text-white"
-                      />
-                      <input
-                        placeholder="Şehir"
-                        value={manualUsed.city}
-                        onChange={(e) => setManualUsed({ ...manualUsed, city: e.target.value })}
-                        className="rounded-xl bg-[#090A0C] border border-white/10 px-3 py-1.5 text-white"
+                        value={noteInput}
+                        onChange={(e) => setNoteInput(e.target.value)}
+                        placeholder="Kısa ortak not..."
+                        className="flex-1 rounded-xl px-3 py-1.5 text-xs focus:outline-none"
+                        style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--ink)' }}
                       />
                       <button
-                        type="submit"
-                        className="col-span-2 py-2 rounded-xl bg-[#3B82F6] text-white font-semibold cursor-pointer"
+                        onClick={() => {
+                          handleVote(selected.id, 'metehan', selected.vote_metehan, noteInput);
+                          notify('Ortak not kaydedildi.');
+                        }}
+                        className="px-3 py-1.5 rounded-xl text-xs font-semibold cursor-pointer"
+                        style={{ background: 'var(--ink)', color: 'var(--bg)' }}
                       >
-                        2. El İlanı Kaydet
+                        Kaydet
                       </button>
-                    </form>
-                  )}
+                    </div>
+                  </div>
 
-                  {selected.used_listings.map((u) => (
-                    <div
-                      key={u.id}
-                      className="px-4 py-3 rounded-2xl bg-[#3B82F6]/[0.06] border border-[#3B82F6]/20 flex items-center justify-between gap-3"
-                    >
-                      <div className="min-w-0">
-                        <div className="text-xs font-medium text-[#F5F2EB] truncate">{u.title}</div>
-                        <div className="text-[11px] text-[#8F96A3]">
-                          {u.platform} • {u.city} • Güven %{u.trust_score}
-                          {u.param_guvende ? ' • Param Güvende' : ''}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="font-mono-num text-sm font-bold text-[#60A5FA]">
-                          {fmtPrice(u.price_try)}
-                        </span>
-                        <button
-                          onClick={() => {
-                            const offer = Math.round((u.price_try * 0.9) / 50) * 50;
-                            navigator.clipboard.writeText(
-                              `Merhaba, ilanınızla ilgileniyorum. ${fmtTry(offer)} nakit / Param Güvende ile hemen alabilirim, uygun mudur?`
-                            );
-                            notify('Pazarlık mesajı kopyalandı.');
-                          }}
-                          className="px-2.5 py-1 rounded-full bg-white/[0.08] hover:bg-white/[0.15] text-[10px] cursor-pointer"
-                        >
-                          Pazarlık
-                        </button>
+                  {selected.sizes.length > 0 && (
+                    <div className="p-4 rounded-2xl space-y-2.5" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+                      <div className="text-xs font-semibold">Beden Stok Takibi (Alarm için tıkla)</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {selected.sizes.map((s) => {
+                          const tracked = selected.tracked_sizes
+                            .toUpperCase()
+                            .split(',')
+                            .map((x) => x.trim())
+                            .includes(s.size.toUpperCase());
+                          return (
+                            <button
+                              key={s.size}
+                              onClick={() => handleToggleSize(selected, s.size)}
+                              className={`px-3 py-1 rounded-full text-xs font-mono-num cursor-pointer transition ${
+                                !s.in_stock && !tracked ? 'line-through opacity-50' : ''
+                              }`}
+                              style={{
+                                background: tracked
+                                  ? 'var(--accent)'
+                                  : s.in_stock
+                                  ? 'color-mix(in srgb, var(--accent) 14%, transparent)'
+                                  : 'transparent',
+                                color: tracked ? 'var(--accent-ink)' : s.in_stock ? 'var(--accent)' : 'var(--muted)',
+                                border: '1px solid var(--border)',
+                              }}
+                            >
+                              {s.size}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
-                  ))}
+                  )}
+                </div>
+
+                {/* Right Column */}
+                <div className="lg:col-span-7 space-y-5">
+                  <div className="p-5 rounded-2xl flex flex-wrap items-center justify-between gap-4" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+                    <div>
+                      <div className="text-[11px] uppercase tracking-wider" style={{ color: 'var(--muted)' }}>
+                        En Ucuz Sıfır Piyasa
+                      </div>
+                      <div className="font-mono-num text-3xl font-bold mt-1">
+                        {selected.best_new_try > 0 ? fmtPrice(selected.best_new_try) : '—'}
+                      </div>
+                      <div className="text-xs mt-1.5" style={{ color: 'var(--muted)' }}>
+                        {selected.discount_verdict.explanation}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5 rounded-full px-3 py-1.5" style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
+                        <Bell className="w-3.5 h-3.5" style={{ color: 'var(--accent)' }} />
+                        <input
+                          value={targetInput}
+                          onChange={(e) => setTargetInput(e.target.value)}
+                          placeholder="Hedef ₺"
+                          className="w-20 bg-transparent text-xs font-mono-num focus:outline-none"
+                          style={{ color: 'var(--ink)' }}
+                        />
+                      </div>
+                      <button
+                        onClick={async () => {
+                          const v = targetInput.trim() ? Number(targetInput) : null;
+                          await api.setTargetPrice(selected.id, v);
+                          await loadAll();
+                          notify(v ? `Hedef fiyat ${fmtTry(v)} olarak ayarlandı.` : 'Hedef fiyat temizlendi.');
+                        }}
+                        className="px-3.5 py-1.5 rounded-full text-xs font-semibold cursor-pointer"
+                        style={{ background: 'var(--ink)', color: 'var(--bg)' }}
+                      >
+                        Alarm Kur
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Chart */}
+                  <div className="p-4 rounded-2xl" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-semibold flex items-center gap-1.5">
+                        <TrendingDown className="w-3.5 h-3.5" style={{ color: 'var(--accent)' }} />
+                        Fiyat Geçmişi ({currency === 'GOLD' ? 'TRY' : currency})
+                      </span>
+                      <span className="text-[11px] font-mono-num" style={{ color: 'var(--muted)' }}>
+                        Dip: {fmtPrice(selected.discount_verdict.min_all_try)} • Ort:{' '}
+                        {fmtPrice(selected.discount_verdict.avg_30d_try)}
+                      </span>
+                    </div>
+                    <PriceChart
+                      history={selected.history}
+                      currency={currency === 'USD' ? 'USD' : 'TRY'}
+                      targetPriceTry={selected.target_price_try}
+                      currentUsdRate={rates.usd_try}
+                    />
+                  </div>
+
+                  {/* Installment + TR Bank Cards */}
+                  {selected.best_new_try > 0 && (
+                    <div className="p-4 rounded-2xl space-y-3" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-xs font-semibold flex items-center gap-1.5">
+                          <CreditCard className="w-3.5 h-3.5" style={{ color: 'var(--accent-2)' }} />
+                          Taksit, Kargo & Kart Kampanyası
+                        </span>
+                        <div className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--muted)' }}>
+                          <span>Kargo ₺:</span>
+                          <input
+                            type="number"
+                            value={shippingCost}
+                            onChange={(e) => setShippingCost(Number(e.target.value) || 0)}
+                            className="w-16 rounded-lg px-2 py-0.5 font-mono-num"
+                            style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--ink)' }}
+                          />
+                          <span>Aylık %:</span>
+                          <input
+                            type="number"
+                            step="0.2"
+                            value={installmentRate}
+                            onChange={(e) => setInstallmentRate(Number(e.target.value) || 0)}
+                            className="w-14 rounded-lg px-2 py-0.5 font-mono-num"
+                            style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--ink)' }}
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-4 gap-2">
+                        {[1, 3, 6, 9].map((m) => {
+                          const base = selected.best_new_try + shippingCost;
+                          const total = m === 1 ? base : base * (1 + (installmentRate / 100) * (m - 1));
+                          const monthly = total / m;
+                          return (
+                            <div
+                              key={m}
+                              className="p-2.5 rounded-xl text-center"
+                              style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}
+                            >
+                              <div className="text-[10px]" style={{ color: 'var(--muted)' }}>
+                                {m === 1 ? 'Peşin' : `${m} Taksit`}
+                              </div>
+                              <div className="font-mono-num text-xs font-bold mt-0.5">
+                                {fmtTry(monthly)}
+                                {m > 1 ? '/ay' : ''}
+                              </div>
+                              <div className="font-mono-num text-[10px] mt-0.5" style={{ color: 'var(--muted)' }}>
+                                Top: {fmtTry(total)}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {userCards && (
+                        <div className="text-[11px]" style={{ color: 'var(--muted)' }}>
+                          Kartların ({userCards}): Peşin fiyatına 3 taksit / puan kampanyasını ödeme öncesi BonusFlaş / World Mobil’den aktive etmeyi unutma.
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Retail Offers */}
+                  <div className="space-y-2">
+                    <div className="text-xs font-semibold">Mağaza Teklifleri ({selected.offers.length})</div>
+                    {selected.offers.map((o) => (
+                      <div
+                        key={o.id}
+                        className="px-4 py-3 rounded-2xl flex items-center justify-between gap-3"
+                        style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+                      >
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold">{o.store_name}</div>
+                          <div className="text-[11px]" style={{ color: 'var(--muted)' }}>
+                            {o.seller_name} • Güven %{o.trust_score}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className="font-mono-num text-sm font-bold" style={{ color: 'var(--accent)' }}>
+                            {fmtPrice(o.price_try + o.shipping_try)}
+                          </span>
+                          <button
+                            onClick={() => api.openExternal(o.url)}
+                            className="p-2 rounded-full cursor-pointer"
+                            style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* 2nd Hand + Local Ollama Defect Detector */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold" style={{ color: 'var(--accent-2)' }}>
+                        2. El Piyasa & Lokal AI Kusur Dedektörü ({selected.used_listings.length})
+                      </span>
+                      <button
+                        onClick={() => setShowManualUsed((v) => !v)}
+                        className="text-[11px] hover:underline cursor-pointer"
+                        style={{ color: 'var(--accent-2)' }}
+                      >
+                        + Manuel 2. El İlan Ekle
+                      </button>
+                    </div>
+
+                    {showManualUsed && (
+                      <form
+                        onSubmit={handleAddManualUsed}
+                        className="p-3.5 rounded-2xl grid grid-cols-2 gap-2 text-xs"
+                        style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+                      >
+                        <input
+                          placeholder="İlan başlığı / kısa açıklama"
+                          value={manualUsed.title}
+                          onChange={(e) => setManualUsed({ ...manualUsed, title: e.target.value })}
+                          className="col-span-2 rounded-xl px-3 py-1.5"
+                          style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--ink)' }}
+                        />
+                        <input
+                          placeholder="Fiyat (₺)"
+                          type="number"
+                          value={manualUsed.price_try}
+                          onChange={(e) => setManualUsed({ ...manualUsed, price_try: e.target.value })}
+                          className="rounded-xl px-3 py-1.5"
+                          style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--ink)' }}
+                        />
+                        <input
+                          placeholder="Şehir"
+                          value={manualUsed.city}
+                          onChange={(e) => setManualUsed({ ...manualUsed, city: e.target.value })}
+                          className="rounded-xl px-3 py-1.5"
+                          style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--ink)' }}
+                        />
+                        <button
+                          type="submit"
+                          className="col-span-2 py-2 rounded-xl font-semibold cursor-pointer"
+                          style={{ background: 'var(--accent-2)', color: '#fff' }}
+                        >
+                          2. El İlanı Kaydet
+                        </button>
+                      </form>
+                    )}
+
+                    {selected.used_listings.map((u) => {
+                      const ai = aiResult[u.id];
+                      return (
+                        <div
+                          key={u.id}
+                          className="p-3.5 rounded-2xl space-y-2"
+                          style={{ background: 'color-mix(in srgb, var(--accent-2) 8%, transparent)', border: '1px solid color-mix(in srgb, var(--accent-2) 24%, transparent)' }}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-xs font-medium truncate">{u.title}</div>
+                              <div className="text-[11px]" style={{ color: 'var(--muted)' }}>
+                                {u.platform} • {u.city} • Güven %{u.trust_score}
+                                {u.param_guvende ? ' • Param Güvende' : ''}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="font-mono-num text-sm font-bold" style={{ color: 'var(--accent-2)' }}>
+                                {fmtPrice(u.price_try)}
+                              </span>
+                              <button
+                                onClick={() =>
+                                  handleAnalyzeUsed(u.id, u.title, u.price_try, selected.best_new_try)
+                                }
+                                disabled={aiLoadingId === u.id}
+                                className="px-2.5 py-1 rounded-full text-[10px] font-semibold flex items-center gap-1 cursor-pointer"
+                                style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}
+                              >
+                                <Bot className="w-3 h-3" style={{ color: 'var(--accent)' }} />
+                                {aiLoadingId === u.id ? 'Analiz...' : 'AI Kusur'}
+                              </button>
+                            </div>
+                          </div>
+
+                          {ai && (
+                            <div className="p-3 rounded-xl text-[11px] space-y-1.5" style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
+                              <div className="flex items-center justify-between">
+                                <span className="font-semibold" style={{ color: 'var(--accent)' }}>
+                                  {ai.engine} • Risk: {ai.risk_level}
+                                </span>
+                                <span className="font-mono-num">Adil Teklif: {fmtTry(ai.fair_price_try)}</span>
+                              </div>
+                              <div style={{ color: 'var(--muted)' }}>{ai.summary}</div>
+                              {ai.red_flags.length > 0 && (
+                                <div className="flex flex-wrap gap-1 pt-0.5">
+                                  {ai.red_flags.map((rf, i) => (
+                                    <span key={i} className="px-2 py-0.5 rounded-full text-[10px]" style={{ background: 'rgba(244,63,94,0.16)', color: 'var(--danger)' }}>
+                                      ⚠ {rf}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                              <button
+                                onClick={() => {
+                                  navigator.clipboard.writeText(ai.bargain_script);
+                                  notify('AI pazarlık mesajı kopyalandı.');
+                                }}
+                                className="text-[10px] font-semibold hover:underline cursor-pointer"
+                                style={{ color: 'var(--accent)' }}
+                              >
+                                Pazarlık Mesajını Kopyala ↗
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
-        </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {showSettings && (
+        <SettingsModal
+          onClose={() => setShowSettings(false)}
+          onToast={notify}
+          onThemeChange={(t) => setActiveTheme(t)}
+        />
       )}
 
-      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} onToast={notify} />}
-
-      {toast && (
-        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 rounded-full bg-[#F5F2EB] text-[#090A0C] text-xs font-semibold shadow-2xl">
-          {toast}
-        </div>
-      )}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 16, scale: 0.94 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.94 }}
+            transition={{ type: 'spring', stiffness: 420, damping: 28 }}
+            className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 rounded-full text-xs font-semibold shadow-2xl"
+            style={{ background: 'var(--ink)', color: 'var(--bg)' }}
+          >
+            {toast}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

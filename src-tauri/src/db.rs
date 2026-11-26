@@ -91,6 +91,7 @@ fn init_schema(conn: &Connection) -> Result<(), String> {
     let _ = conn.execute("ALTER TABLE products ADD COLUMN purchased_at TEXT", []);
     let _ = conn.execute("ALTER TABLE products ADD COLUMN snapshot_price_try REAL", []);
     let _ = conn.execute("ALTER TABLE products ADD COLUMN snapshot_at TEXT", []);
+    let _ = conn.execute("ALTER TABLE products ADD COLUMN custom_css_selector TEXT", []);
 
     // Seed default folders
     for name in ["Genel", "Giyim & Inditex", "Kozmetik", "Yeni PC Toplama", "Mutfak Çeyiz", "2. El Avı"] {
@@ -839,6 +840,9 @@ pub fn load_settings(conn: &Connection) -> AlertSettings {
         cloudflare_tunnel_url: get("cloudflare_tunnel_url", ""),
         cloudflare_tunnel_token: get("cloudflare_tunnel_token", ""),
         cloudflare_worker_key: get("cloudflare_worker_key", ""),
+        active_theme: get("active_theme", "obsidian-aurora"),
+        monthly_budget_try: get("monthly_budget_try", "15000").parse().unwrap_or(15000.0),
+        user_cards: get("user_cards", "Bonus, World, Maximum"),
     }
 }
 
@@ -852,6 +856,9 @@ pub fn save_settings(conn: &Connection, s: &AlertSettings) -> Result<(), String>
         ("cloudflare_tunnel_url", s.cloudflare_tunnel_url.clone()),
         ("cloudflare_tunnel_token", s.cloudflare_tunnel_token.clone()),
         ("cloudflare_worker_key", s.cloudflare_worker_key.clone()),
+        ("active_theme", s.active_theme.clone()),
+        ("monthly_budget_try", s.monthly_budget_try.round().to_string()),
+        ("user_cards", s.user_cards.clone()),
     ];
     for (k, v) in pairs {
         conn.execute(

@@ -1,49 +1,27 @@
 {
   "manifest_version": 3,
   "name": "Hayye Market",
-  "version": "2.0.0",
-  "description": "29 Türkiye ve global mağazada canlı sahte indirim kontrolü, başka mağazada daha ucuzunu bulma, beden stoğu ve tek tık favori/sepet aktarımı.",
+  "version": "3.0.0",
+  "description": "Kalıcı Yan Panel (Side Panel), Görsel Fiyat Seçici (her sitede çalışır), canlı sahte indirim kontrolü, başka mağazada daha ucuzunu bulma ve beden stoğu.",
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "permissions": ["activeTab", "scripting"],
+  "permissions": ["activeTab", "scripting", "sidePanel", "tabs"],
   "host_permissions": [
     "http://127.0.0.1:47821/*",
-    "https://*.zara.com/*",
-    "https://*.bershka.com/*",
-    "https://*.stradivarius.com/*",
-    "https://*.pullandbear.com/*",
-    "https://*.massimodutti.com/*",
-    "https://*.oysho.com/*",
-    "https://*.flawwear.com/*",
-    "https://*.hypetr.com/*",
-    "https://*.36clo.com/*",
-    "https://*.nike.com/*",
-    "https://*.beymen.com/*",
-    "https://*.boyner.com.tr/*",
-    "https://*.sephora.com.tr/*",
-    "https://*.gratis.com/*",
-    "https://*.watsons.com.tr/*",
-    "https://*.rossmann.com.tr/*",
-    "https://*.sahibinden.com/*",
-    "https://*.dolap.com/*",
-    "https://*.letgo.com/*",
-    "https://*.trendyol.com/*",
-    "https://*.hepsiburada.com/*",
-    "https://*.n11.com/*",
-    "https://*.amazon.com.tr/*",
-    "https://*.itopya.com/*",
-    "https://*.incehesap.com/*",
-    "https://*.sinerji.gen.tr/*",
-    "https://*.akakce.com/*",
-    "https://*.vatanbilgisayar.com/*"
+    "<all_urls>"
   ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
   "action": {
-    "default_popup": "popup.html",
-    "default_title": "Hayye Market",
+    "default_title": "Hayye Market Yan Panelini Aç",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",

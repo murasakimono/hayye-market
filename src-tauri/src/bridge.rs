@@ -9,133 +9,181 @@ pub const BRIDGE_PORT: u16 = 47821;
 
 const ICON_PNG: &[u8] = include_bytes!("../icons/128x128.png");
 
+const SW_JS: &str = r##"const CACHE = 'hayye-v3';
+self.addEventListener('install', e => {
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(['/app', '/manifest.webmanifest', '/icon.png'])).catch(() => {}));
+  self.skipWaiting();
+});
+self.addEventListener('activate', e => { e.waitUntil(self.clients.claim()); });
+self.addEventListener('fetch', e => {
+  if (e.request.method !== 'GET') return;
+  const u = new URL(e.request.url);
+  if (u.pathname === '/api/products' || u.pathname === '/api/theme') {
+    e.respondWith(
+      fetch(e.request).then(r => {
+        const clone = r.clone();
+        caches.open(CACHE).then(c => c.put(e.request, clone));
+        return r;
+      }).catch(() => caches.match(e.request))
+    );
+    return;
+  }
+  e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
+});
+"##;
+
 const IOS_PWA_HTML: &str = r##"<!doctype html>
-<html lang="tr">
+<html lang="tr" data-theme="obsidian-aurora">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Hayye Market" />
-  <meta name="theme-color" content="#090A0C" />
+  <meta name="theme-color" content="#080A0D" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="apple-touch-icon" href="/icon.png" />
   <title>Hayye Market</title>
   <style>
+    :root, [data-theme="obsidian-aurora"] {
+      --bg:#080A0D; --surf:rgba(17,20,26,.82); --surf2:rgba(255,255,255,.05); --ink:#F5F2EB; --muted:#8F96A3;
+      --acc:#10B981; --accInk:#07100C; --acc2:#3B82F6; --danger:#F43F5E; --bdr:rgba(255,255,255,.09);
+      --o1:rgba(16,185,129,.22); --o2:rgba(59,130,246,.18);
+    }
+    [data-theme="noir-velvet"] {
+      --bg:#0F090D; --surf:rgba(26,15,22,.82); --surf2:rgba(255,230,235,.06); --ink:#FAF3F0; --muted:#B098A4;
+      --acc:#F43F5E; --accInk:#FFF7F8; --acc2:#F59E0B; --danger:#FB7185; --bdr:rgba(255,220,230,.1);
+      --o1:rgba(225,29,72,.24); --o2:rgba(245,158,11,.18);
+    }
+    [data-theme="atelier-ivory"] {
+      --bg:#F4EFE6; --surf:rgba(255,253,249,.9); --surf2:rgba(20,19,17,.05); --ink:#161513; --muted:#6C675E;
+      --acc:#059669; --accInk:#FFFFFF; --acc2:#2563EB; --danger:#E11D48; --bdr:rgba(20,19,17,.1);
+      --o1:rgba(16,185,129,.14); --o2:rgba(217,119,6,.13);
+    }
+    [data-theme="arctic-frost"] {
+      --bg:#060C14; --surf:rgba(13,24,38,.78); --surf2:rgba(186,230,253,.07); --ink:#F0F9FF; --muted:#8EB2CC;
+      --acc:#38BDF8; --accInk:#05131E; --acc2:#818CF8; --danger:#FB7185; --bdr:rgba(186,230,253,.14);
+      --o1:rgba(56,189,248,.24); --o2:rgba(129,140,248,.18);
+    }
+    [data-theme="midnight-botanical"] {
+      --bg:#070F0C; --surf:rgba(13,25,20,.82); --surf2:rgba(212,245,226,.06); --ink:#F2F7F4; --muted:#8FA89B;
+      --acc:#34D399; --accInk:#05140E; --acc2:#D97706; --danger:#F43F5E; --bdr:rgba(212,245,226,.1);
+      --o1:rgba(52,211,153,.22); --o2:rgba(217,119,6,.18);
+    }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     html, body {
       width: 100%; max-width: 100%; overflow-x: hidden; margin: 0;
-      background: #090A0C; color: #F5F2EB;
+      background: var(--bg); color: var(--ink);
       font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
-      padding: env(safe-area-inset-top) 0 calc(84px + env(safe-area-inset-bottom));
+      padding: env(safe-area-inset-top) 0 calc(88px + env(safe-area-inset-bottom));
+      transition: background .4s ease, color .3s ease;
     }
+    .mesh { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+    .orb { position: absolute; border-radius: 50%; filter: blur(90px); }
+    .orb1 { width: 75vw; height: 75vw; top: -18%; left: -16%; background: var(--o1); animation: d1 18s ease-in-out infinite alternate; }
+    .orb2 { width: 70vw; height: 70vw; bottom: -18%; right: -16%; background: var(--o2); animation: d2 22s ease-in-out infinite alternate; }
+    @keyframes d1 { to { transform: translate(12%, 10%) scale(1.1); } }
+    @keyframes d2 { to { transform: translate(-10%, -12%) scale(.94); } }
     header {
       position: sticky; top: 0; width: 100%; z-index: 20;
-      background: rgba(9, 10, 12, 0.85); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-      border-bottom: 1px solid rgba(255,255,255,0.06);
-      padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      background: var(--surf); backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px);
+      border-bottom: 1px solid var(--bdr);
+      padding: 11px 16px; display: flex; align-items: center; justify-content: space-between; gap: 8px;
     }
-    .brand { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 16px; letter-spacing: -0.01em; }
+    .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 16px; letter-spacing: -0.02em; }
     .brand img { width: 28px; height: 28px; border-radius: 8px; }
-    .who-pill {
-      display: flex; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.09);
-      border-radius: 999px; padding: 2px; gap: 2px;
+    .h-right { display: flex; align-items: center; gap: 6px; }
+    .t-btn {
+      border: 1px solid var(--bdr); background: var(--surf2); color: var(--ink);
+      border-radius: 999px; padding: 6px 9px; font-size: 12px; cursor: pointer;
     }
-    .who-btn {
-      border: none; background: transparent; color: #8F96A3; font-size: 11px; font-weight: 600;
-      padding: 5px 10px; border-radius: 999px; cursor: pointer;
-    }
-    .who-btn.active { background: #F5F2EB; color: #090A0C; }
-    .wrap { width: 100%; max-width: 640px; margin: 0 auto; padding: 14px 16px; }
-    .add-box { display: flex; gap: 8px; margin-bottom: 14px; width: 100%; }
+    .who-pill { display: flex; background: var(--surf2); border: 1px solid var(--bdr); border-radius: 999px; padding: 2px; }
+    .who-btn { border: none; background: transparent; color: var(--muted); font-size: 11px; font-weight: 600; padding: 5px 9px; border-radius: 999px; cursor: pointer; }
+    .who-btn.active { background: var(--ink); color: var(--bg); }
+    .wrap { position: relative; z-index: 2; width: 100%; max-width: 960px; margin: 0 auto; padding: 14px 16px; }
+    .add-box { display: flex; gap: 8px; margin-bottom: 12px; width: 100%; }
     input {
-      flex: 1; min-width: 0; width: 100%; background: rgba(255,255,255,0.05);
-      border: 1px solid rgba(255,255,255,0.09); color: #F5F2EB;
+      flex: 1; min-width: 0; width: 100%; background: var(--surf);
+      border: 1px solid var(--bdr); color: var(--ink);
       padding: 11px 14px; font-size: 14px; border-radius: 999px; outline: none;
     }
-    input:focus { border-color: #10B981; }
+    input:focus { border-color: var(--acc); }
     .add-btn {
-      flex-shrink: 0; background: #F5F2EB; color: #090A0C; border: none;
-      padding: 11px 16px; font-weight: 700; font-size: 13px; border-radius: 999px; cursor: pointer;
+      flex-shrink: 0; background: var(--ink); color: var(--bg); border: none;
+      padding: 11px 15px; font-weight: 700; font-size: 13px; border-radius: 999px; cursor: pointer;
     }
-    #msg { font-size: 12px; color: #10B981; margin-bottom: 10px; min-height: 16px; }
+    #msg { font-size: 12px; color: var(--acc); margin-bottom: 10px; min-height: 16px; }
+    #list { display: grid; grid-template-columns: 1fr; gap: 14px; }
+    @media (min-width: 720px) { #list { grid-template-columns: 1fr 1fr; } }
     .card {
-      background: #111317; border: 1px solid rgba(255,255,255,0.07);
-      border-radius: 22px; overflow: hidden; margin-bottom: 14px;
+      background: var(--surf); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+      border: 1px solid var(--bdr); border-radius: 24px; overflow: hidden;
+      transition: transform .22s cubic-bezier(.22,1,.36,1);
     }
-    .hero { position: relative; aspect-ratio: 16/10; background: #181C23; overflow: hidden; }
+    .hero { position: relative; aspect-ratio: 16/10; background: var(--surf2); overflow: hidden; }
     .hero img { width: 100%; height: 100%; object-fit: cover; display: block; }
-    .hero-grad { position: absolute; inset: 0; background: linear-gradient(to top, #111317 4%, transparent 55%, rgba(0,0,0,0.4)); }
+    .hero-grad { position: absolute; inset: 0; background: linear-gradient(to top, rgba(0,0,0,.78) 4%, transparent 55%, rgba(0,0,0,.35)); }
     .pill-top { position: absolute; top: 10px; left: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
     .badge {
-      padding: 4px 10px; border-radius: 999px; font-size: 10px; font-weight: 700;
-      background: rgba(0,0,0,0.55); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.12);
+      padding: 4px 10px; border-radius: 999px; font-size: 10px; font-weight: 700; color: #F5F2EB;
+      background: rgba(0,0,0,.55); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,.15);
     }
-    .badge.dip { background: rgba(16,185,129,0.22); color: #10B981; border-color: rgba(16,185,129,0.45); }
-    .badge.fake { background: rgba(244,63,94,0.22); color: #F43F5E; border-color: rgba(244,63,94,0.45); }
-    .price-ov {
-      position: absolute; bottom: 10px; left: 14px; right: 14px;
-      display: flex; justify-content: space-between; align-items: flex-end; gap: 8px;
-    }
-    .price { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 21px; font-weight: 700; color: #F5F2EB; }
-    .used-pill {
-      font-family: ui-monospace, monospace; font-size: 11px; font-weight: 600;
-      padding: 4px 9px; border-radius: 999px; background: rgba(59,130,246,0.22); color: #60A5FA;
-    }
+    .badge.dip { background: rgba(16,185,129,.28); color: #6EE7B7; border-color: rgba(16,185,129,.45); }
+    .badge.fake { background: rgba(244,63,94,.28); color: #FDA4AF; border-color: rgba(244,63,94,.45); }
+    .price-ov { position: absolute; bottom: 10px; left: 14px; right: 14px; display: flex; justify-content: space-between; align-items: flex-end; gap: 8px; }
+    .price { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 21px; font-weight: 700; color: #FFFFFF; }
+    .used-pill { font-family: ui-monospace, monospace; font-size: 11px; font-weight: 600; padding: 4px 9px; border-radius: 999px; background: rgba(59,130,246,.28); color: #BFDBFE; }
     .body { padding: 14px; }
-    .title { font-size: 14px; font-weight: 600; line-height: 1.38; color: #F5F2EB; }
-    .meta { font-size: 11px; color: #8F96A3; margin-top: 6px; display: flex; flex-wrap: wrap; gap: 8px; }
+    .title { font-size: 14px; font-weight: 600; line-height: 1.38; color: var(--ink); }
+    .meta { font-size: 11px; color: var(--muted); margin-top: 6px; display: flex; flex-wrap: wrap; gap: 8px; }
     .sizes { margin-top: 9px; display: flex; flex-wrap: wrap; gap: 5px; }
     .sz { font-family: ui-monospace, monospace; font-size: 10px; padding: 3px 8px; border-radius: 999px; }
-    .sz.in { background: rgba(16,185,129,0.16); color: #10B981; }
-    .sz.out { background: rgba(255,255,255,0.04); color: #606774; text-decoration: line-through; }
-    .votes {
-      margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.06);
-      display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
-    }
+    .sz.in { background: rgba(16,185,129,.18); color: var(--acc); }
+    .sz.out { background: var(--surf2); color: var(--muted); opacity: .55; text-decoration: line-through; }
+    .votes { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--bdr); display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
     .v-btns { display: flex; gap: 6px; }
-    .v-btn {
-      border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04); color: #9AA2AC;
-      border-radius: 999px; padding: 5px 11px; font-size: 11px; font-weight: 600; cursor: pointer;
-    }
-    .v-btn.buy { background: rgba(16,185,129,0.22); color: #10B981; border-color: rgba(16,185,129,0.45); }
-    .v-btn.wait { background: rgba(251,191,36,0.18); color: #FCD34D; border-color: rgba(251,191,36,0.4); }
-    .v-btn.pass { background: rgba(244,63,94,0.18); color: #F43F5E; border-color: rgba(244,63,94,0.4); }
+    .v-btn { border: 1px solid var(--bdr); background: var(--surf2); color: var(--muted); border-radius: 999px; padding: 5px 11px; font-size: 11px; font-weight: 600; cursor: pointer; }
+    .v-btn.buy { background: rgba(16,185,129,.22); color: var(--acc); border-color: var(--acc); }
+    .v-btn.wait { background: rgba(245,158,11,.2); color: #F59E0B; border-color: #F59E0B; }
+    .v-btn.pass { background: rgba(244,63,94,.2); color: var(--danger); border-color: var(--danger); }
     .actions { margin-top: 11px; display: flex; gap: 8px; }
     .a-btn {
       flex: 1; text-align: center; text-decoration: none; font-size: 12px; font-weight: 600;
-      padding: 10px 12px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.1); color: #F5F2EB;
-      background: rgba(255,255,255,0.05); cursor: pointer;
+      padding: 10px 12px; border-radius: 14px; border: 1px solid var(--bdr); color: var(--ink);
+      background: var(--surf2); cursor: pointer;
     }
-    .a-btn.sniper { background: #10B981; color: #090A0C; border-color: #10B981; font-weight: 700; }
+    .a-btn.sniper { background: var(--acc); color: var(--accInk); border-color: var(--acc); font-weight: 700; }
+    .swipe-hint { font-size: 11px; color: var(--muted); text-align: center; margin-bottom: 10px; }
     .dock {
       position: fixed; left: 50%; transform: translateX(-50%);
       bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 30;
       display: flex; gap: 4px; padding: 5px; border-radius: 999px;
-      background: rgba(17, 19, 23, 0.88); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-      border: 1px solid rgba(255,255,255,0.12); box-shadow: 0 12px 32px rgba(0,0,0,0.6);
+      background: var(--surf); backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px);
+      border: 1px solid var(--bdr); box-shadow: 0 14px 36px rgba(0,0,0,.45);
     }
-    .d-btn {
-      border: none; background: transparent; color: #8F96A3; font-size: 12px; font-weight: 600;
-      padding: 8px 14px; border-radius: 999px; cursor: pointer; white-space: nowrap;
-    }
-    .d-btn.active { background: #F5F2EB; color: #090A0C; }
+    .d-btn { border: none; background: transparent; color: var(--muted); font-size: 12px; font-weight: 600; padding: 8px 13px; border-radius: 999px; cursor: pointer; white-space: nowrap; }
+    .d-btn.active { background: var(--ink); color: var(--bg); }
   </style>
 </head>
 <body>
+  <div class="mesh"><div class="orb orb1"></div><div class="orb orb2"></div></div>
   <header>
-    <div class="brand"><img src="/icon.png" alt="H" /> Hayye Market</div>
-    <div class="who-pill">
-      <button id="who-m" class="who-btn" onclick="setWho('metehan')">Metehan</button>
-      <button id="who-i" class="who-btn" onclick="setWho('ilayda')">İlayda</button>
+    <div class="brand"><img src="/icon.png" alt="H" /> Hayye</div>
+    <div class="h-right">
+      <button class="t-btn" onclick="cycleTheme()" title="Tema Değiştir">◐</button>
+      <div class="who-pill">
+        <button id="who-m" class="who-btn" onclick="setWho('metehan')">Metehan</button>
+        <button id="who-i" class="who-btn" onclick="setWho('ilayda')">İlayda</button>
+      </div>
     </div>
   </header>
   <div class="wrap">
-    <form class="add-box" onsubmit="addUrl(event)">
-      <input id="u" placeholder="Zara, Flaw, Trendyol, Amazon linki..." />
-      <button class="add-btn" type="submit">Ekle</button>
+    <form class="add-box" onsubmit="addOrCompare(event)">
+      <input id="u" placeholder="Link yapıştır veya mağazada ürün adı ara..." />
+      <button class="add-btn" type="submit">Ekle / Ara</button>
     </form>
     <div id="msg"></div>
+    <div id="hint" class="swipe-hint" style="display:none">Kartı sağa kaydır: Al ✓ • Sola kaydır: Pas ✕</div>
     <div id="list">Yükleniyor...</div>
   </div>
   <nav class="dock">
@@ -145,11 +193,23 @@ const IOS_PWA_HTML: &str = r##"<!doctype html>
     <button id="t-orders" class="d-btn" onclick="setTab('orders')">Sipariş</button>
   </nav>
   <script>
+    if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/sw.js').catch(()=>{}); }
+    const THEMES = ['obsidian-aurora','noir-velvet','atelier-ivory','arctic-frost','midnight-botanical'];
     const fmt = v => Math.round(v).toLocaleString('tr-TR') + ' ₺';
     let who = localStorage.getItem('hayye_who') || 'metehan';
     let tab = 'gallery';
     let cache = [];
+    let curTheme = 'obsidian-aurora';
 
+    function applyTheme(t) {
+      curTheme = THEMES.includes(t) ? t : 'obsidian-aurora';
+      document.documentElement.setAttribute('data-theme', curTheme);
+    }
+    async function cycleTheme() {
+      const next = THEMES[(THEMES.indexOf(curTheme) + 1) % THEMES.length];
+      applyTheme(next);
+      fetch('/api/theme', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ theme: next }) }).catch(()=>{});
+    }
     function syncWhoUI() {
       document.getElementById('who-m').className = 'who-btn' + (who === 'metehan' ? ' active' : '');
       document.getElementById('who-i').className = 'who-btn' + (who === 'ilayda' ? ' active' : '');
@@ -160,9 +220,9 @@ const IOS_PWA_HTML: &str = r##"<!doctype html>
       ['gallery','radar','shared','orders'].forEach(x => {
         document.getElementById('t-' + x).className = 'd-btn' + (x === t ? ' active' : '');
       });
+      document.getElementById('hint').style.display = t === 'shared' ? 'block' : 'none';
       render();
     }
-
     async function vote(pid, v) {
       await fetch('/api/vote', {
         method: 'POST', headers: {'Content-Type':'application/json'},
@@ -178,8 +238,26 @@ const IOS_PWA_HTML: &str = r##"<!doctype html>
       await load();
     }
 
+    function attachSwipe(cardEl, pid) {
+      let sx = 0, dx = 0;
+      cardEl.addEventListener('touchstart', e => { sx = e.touches[0].clientX; dx = 0; }, { passive: true });
+      cardEl.addEventListener('touchmove', e => {
+        dx = e.touches[0].clientX - sx;
+        if (Math.abs(dx) > 16) cardEl.style.transform = `translateX(${dx * 0.45}px) rotate(${dx * 0.02}deg)`;
+      }, { passive: true });
+      cardEl.addEventListener('touchend', () => {
+        cardEl.style.transform = '';
+        if (dx > 95) vote(pid, 'buy');
+        else if (dx < -95) vote(pid, 'pass');
+      });
+    }
+
     function render() {
       let items = cache;
+      const radarCount = cache.filter(p => p.discount_verdict.status.includes('GENUINE') || (p.best_used_try && p.best_used_try <= p.best_new_try * 0.8)).length;
+      if ('setAppBadge' in navigator) {
+        radarCount > 0 ? navigator.setAppBadge(radarCount).catch(()=>{}) : navigator.clearAppBadge().catch(()=>{});
+      }
       if (tab === 'radar') {
         items = cache.filter(p => p.discount_verdict.status.includes('GENUINE') || (p.best_used_try && p.best_used_try <= p.best_new_try * 0.8));
       } else if (tab === 'orders') {
@@ -187,7 +265,7 @@ const IOS_PWA_HTML: &str = r##"<!doctype html>
       }
       const el = document.getElementById('list');
       if (!items.length) {
-        el.innerHTML = '<div class="card"><div class="body" style="text-align:center;color:#8F96A3">Bu görünümde henüz ürün yok.</div></div>';
+        el.innerHTML = '<div class="card"><div class="body" style="text-align:center;color:var(--muted)">Bu görünümde henüz ürün yok.</div></div>';
         return;
       }
       el.innerHTML = items.map(p => {
@@ -199,7 +277,7 @@ const IOS_PWA_HTML: &str = r##"<!doctype html>
         const otherName = who === 'ilayda' ? 'Metehan' : 'İlayda';
         const vTxt = v => v === 'buy' ? 'Al ✓' : v === 'wait' ? 'Bekle' : v === 'pass' ? 'Pas' : '—';
         const isBought = p.purchased_price_try !== null;
-        return `<div class="card">
+        return `<div class="card" data-pid="${p.id}">
           ${p.image_url ? `<div class="hero"><img src="${p.image_url}" alt="" /><div class="hero-grad"></div>
             <div class="pill-top"><span class="badge ${cls}">${p.discount_verdict.badge}</span>
               ${p.vote_metehan === 'buy' && p.vote_ilayda === 'buy' ? '<span class="badge dip">İKİMİZ DE AL ✓</span>' : ''}
@@ -213,7 +291,7 @@ const IOS_PWA_HTML: &str = r##"<!doctype html>
               <span>${p.folder_name}</span>
               <span>Güven %${p.avg_trust_score}</span>
               ${p.unit_price ? `<span>10${p.unit_price.unit}: ${p.unit_price.price_per_10_try}₺</span>` : ''}
-              ${!p.image_url ? `<strong style="color:#10B981">${fmt(p.best_new_try)}</strong>` : ''}
+              ${!p.image_url ? `<strong style="color:var(--acc)">${fmt(p.best_new_try)}</strong>` : ''}
             </div>
             ${szHtml ? `<div class="sizes">${szHtml}</div>` : ''}
             <div class="votes">
@@ -222,33 +300,49 @@ const IOS_PWA_HTML: &str = r##"<!doctype html>
                 <button class="v-btn ${myVote==='wait'?'wait':''}" onclick="vote(${p.id}, '${myVote==='wait'?'':'wait'}')">Bekle</button>
                 <button class="v-btn ${myVote==='pass'?'pass':''}" onclick="vote(${p.id}, '${myVote==='pass'?'':'pass'}')">Pas</button>
               </div>
-              <span style="font-size:11px;color:#8F96A3">${otherName}: ${vTxt(otherVote)}</span>
+              <span style="font-size:11px;color:var(--muted)">${otherName}: ${vTxt(otherVote)}</span>
             </div>
             <div class="actions">
               <a class="a-btn sniper" href="${buyUrl}" target="_blank">⚡ Hızlı Alım</a>
-              <button class="a-btn" onclick="toggleBuy(${p.id}, ${p.best_new_try}, ${isBought})">${isBought ? '14 Gün Korumada ✓' : 'Aldım'}</button>
+              <button class="a-btn" onclick="toggleBuy(${p.id}, ${p.best_new_try}, ${isBought})">${isBought ? '14 Gün ✓' : 'Aldım'}</button>
             </div>
           </div>
         </div>`;
       }).join('');
+      if (tab === 'shared') {
+        el.querySelectorAll('.card[data-pid]').forEach(c => attachSwipe(c, Number(c.dataset.pid)));
+      }
     }
 
     async function load() {
+      fetch('/api/theme').then(r=>r.json()).then(d=>{ if(d.theme) applyTheme(d.theme); }).catch(()=>{});
       const r = await fetch('/api/products');
       cache = await r.json();
       render();
     }
-    async function addUrl(e) {
+    async function addOrCompare(e) {
       e.preventDefault();
       const inp = document.getElementById('u');
-      const url = inp.value.trim();
-      if (!url) return;
-      document.getElementById('msg').textContent = 'Taranıyor...';
-      const r = await fetch('/ios-share', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ url }) });
-      const d = await r.json();
-      document.getElementById('msg').textContent = d.ok ? '✓ Koleksiyona eklendi!' : (d.error || 'Hata');
-      inp.value = '';
-      load();
+      const val = inp.value.trim();
+      if (!val) return;
+      const msg = document.getElementById('msg');
+      if (val.startsWith('http')) {
+        msg.textContent = 'Taranıyor...';
+        const r = await fetch('/ios-share', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ url: val }) });
+        const d = await r.json();
+        msg.textContent = d.ok ? '✓ Koleksiyona eklendi!' : (d.error || 'Hata');
+        inp.value = '';
+        load();
+      } else {
+        msg.textContent = 'Mağaza içi online kıyaslama yapılıyor...';
+        const r = await fetch('/api/compare', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ title: val, current_price_try: 0 }) });
+        const d = await r.json();
+        if (d.cheaper) {
+          msg.innerHTML = `En ucuz online: <a href="${d.cheaper.url}" target="_blank" style="color:var(--acc);text-decoration:underline">${d.cheaper.store_name} — ${fmt(d.cheaper.price_try)} ↗</a>`;
+        } else {
+          msg.textContent = 'Online sonuç bulunamadı.';
+        }
+      }
     }
     syncWhoUI();
     load();
@@ -261,8 +355,8 @@ const MANIFEST_JSON: &str = r##"{
   "short_name": "Hayye",
   "start_url": "/app",
   "display": "standalone",
-  "background_color": "#090A0C",
-  "theme_color": "#090A0C",
+  "background_color": "#080A0D",
+  "theme_color": "#080A0D",
   "icons": [{ "src": "/icon.png", "sizes": "128x128", "type": "image/png" }]
 }"##;
 
@@ -313,10 +407,34 @@ pub fn spawn_bridge_server() {
                     ("204 No Content", "text/plain", String::new())
                 } else if method == "GET" && (path == "/" || path == "/app") {
                     ("200 OK", "text/html; charset=utf-8", IOS_PWA_HTML.to_string())
+                } else if method == "GET" && path == "/sw.js" {
+                    ("200 OK", "application/javascript; charset=utf-8", SW_JS.to_string())
                 } else if method == "GET" && path == "/manifest.webmanifest" {
                     ("200 OK", "application/manifest+json", MANIFEST_JSON.to_string())
                 } else if method == "GET" && path == "/ping" {
-                    ("200 OK", "application/json", r#"{"ok":true,"app":"Hayye Market","version":"2.0.0"}"#.to_string())
+                    ("200 OK", "application/json", r#"{"ok":true,"app":"Hayye Market","version":"3.0.0"}"#.to_string())
+                } else if method == "GET" && path == "/api/theme" {
+                    match db::open_db() {
+                        Ok(c) => {
+                            let s = db::load_settings(&c);
+                            let j = serde_json::json!({ "theme": s.active_theme, "monthly_budget_try": s.monthly_budget_try });
+                            ("200 OK", "application/json", j.to_string())
+                        }
+                        Err(_) => ("200 OK", "application/json", r#"{"theme":"obsidian-aurora"}"#.to_string()),
+                    }
+                } else if method == "POST" && path == "/api/theme" {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(body_str) {
+                        let theme = v["theme"].as_str().unwrap_or("obsidian-aurora").trim();
+                        let _ = db::open_db().and_then(|c| {
+                            c.execute(
+                                "INSERT INTO settings (key, val) VALUES ('active_theme', ?1) ON CONFLICT(key) DO UPDATE SET val = excluded.val",
+                                params![theme],
+                            ).map_err(|e| e.to_string())
+                        });
+                        ("200 OK", "application/json", r#"{"ok":true}"#.to_string())
+                    } else {
+                        ("400 Bad Request", "application/json", r#"{"error":"Geçersiz JSON"}"#.to_string())
+                    }
                 } else if method == "GET" && path == "/api/products" {
                     match db::open_db().and_then(|c| db::list_products(&c)) {
                         Ok(list) => ("200 OK", "application/json", serde_json::to_string(&list).unwrap_or_else(|_| "[]".into())),
@@ -469,6 +587,9 @@ pub fn spawn_bridge_server() {
                                 }
                                 if let Some(tp) = item.target_price_try.filter(|v| *v > 0.0) {
                                     let _ = conn.execute("UPDATE products SET target_price_try = ?1 WHERE id = ?2", params![tp, pid]);
+                                }
+                                if let Some(sel) = item.custom_css_selector.as_deref().filter(|s| !s.trim().is_empty()) {
+                                    let _ = conn.execute("UPDATE products SET custom_css_selector = ?1 WHERE id = ?2", params![sel.trim(), pid]);
                                 }
                                 if item.is_used.unwrap_or(false) {
                                     let _ = db::add_used_listing(

@@ -8,6 +8,7 @@ import type {
   ProductDetail,
   SearchCandidate,
   TunnelStatus,
+  UsedAiAnalysis,
 } from './types';
 
 export const api = {
@@ -40,6 +41,19 @@ export const api = {
   markPurchased: (productId: number, priceTry: number | null) =>
     invoke<void>('mark_purchased', { productId, priceTry }),
   freezePriceSnapshots: () => invoke<number>('freeze_price_snapshots'),
+  setActiveTheme: (theme: string) => invoke<void>('set_active_theme', { theme }),
+  analyzeUsedWithOllama: (
+    title: string,
+    description: string,
+    priceTry: number,
+    newRetailTry: number
+  ) =>
+    invoke<UsedAiAnalysis>('analyze_used_with_ollama', {
+      title,
+      description,
+      priceTry,
+      newRetailTry,
+    }),
   getSavedTotal: () => invoke<number>('get_saved_total'),
   recordSavings: (deltaTry: number) => invoke<number>('record_savings', { deltaTry }),
   getMobileAccessInfo: () => invoke<MobileAccessInfo>('get_mobile_access_info'),

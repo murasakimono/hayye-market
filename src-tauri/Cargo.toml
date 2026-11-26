@@ -1,6 +1,6 @@
 [package]
 name = "hayye-market"
-version = "2.0.0"
+version = "3.0.0"
 description = "Hayye Market — Evrensel Fiyat, Stok & 2. El İlan Avcısı"
 authors = ["Metehan"]
 edition = "2021"

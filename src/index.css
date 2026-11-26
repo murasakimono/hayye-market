@@ -1,19 +1,109 @@
 @import "tailwindcss";
 
+:root,
+[data-theme="obsidian-aurora"] {
+  --bg: #080A0D;
+  --surface: rgba(17, 20, 26, 0.78);
+  --surface-solid: #11141A;
+  --surface-2: rgba(255, 255, 255, 0.045);
+  --ink: #F5F2EB;
+  --muted: #8F96A3;
+  --accent: #10B981;
+  --accent-ink: #07100C;
+  --accent-2: #3B82F6;
+  --danger: #F43F5E;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --glass: rgba(15, 18, 24, 0.72);
+  --orb-1: rgba(16, 185, 129, 0.18);
+  --orb-2: rgba(59, 130, 246, 0.16);
+  --orb-3: rgba(99, 102, 241, 0.12);
+}
+
+[data-theme="noir-velvet"] {
+  --bg: #0F090D;
+  --surface: rgba(26, 15, 22, 0.78);
+  --surface-solid: #1A0F16;
+  --surface-2: rgba(255, 230, 235, 0.05);
+  --ink: #FAF3F0;
+  --muted: #B098A4;
+  --accent: #F43F5E;
+  --accent-ink: #FFF7F8;
+  --accent-2: #F59E0B;
+  --danger: #FB7185;
+  --border: rgba(255, 220, 230, 0.09);
+  --border-strong: rgba(255, 220, 230, 0.18);
+  --glass: rgba(26, 14, 21, 0.76);
+  --orb-1: rgba(225, 29, 72, 0.22);
+  --orb-2: rgba(245, 158, 11, 0.16);
+  --orb-3: rgba(168, 85, 247, 0.14);
+}
+
+[data-theme="atelier-ivory"] {
+  --bg: #F4EFE6;
+  --surface: rgba(255, 253, 249, 0.86);
+  --surface-solid: #FFFDF9;
+  --surface-2: rgba(20, 19, 17, 0.045);
+  --ink: #161513;
+  --muted: #6C675E;
+  --accent: #059669;
+  --accent-ink: #FFFFFF;
+  --accent-2: #2563EB;
+  --danger: #E11D48;
+  --border: rgba(20, 19, 17, 0.09);
+  --border-strong: rgba(20, 19, 17, 0.18);
+  --glass: rgba(255, 252, 246, 0.82);
+  --orb-1: rgba(16, 185, 129, 0.12);
+  --orb-2: rgba(217, 119, 6, 0.11);
+  --orb-3: rgba(59, 130, 246, 0.08);
+}
+
+[data-theme="arctic-frost"] {
+  --bg: #060C14;
+  --surface: rgba(13, 24, 38, 0.74);
+  --surface-solid: #0D1826;
+  --surface-2: rgba(186, 230, 253, 0.06);
+  --ink: #F0F9FF;
+  --muted: #8EB2CC;
+  --accent: #38BDF8;
+  --accent-ink: #05131E;
+  --accent-2: #818CF8;
+  --danger: #FB7185;
+  --border: rgba(186, 230, 253, 0.12);
+  --border-strong: rgba(186, 230, 253, 0.24);
+  --glass: rgba(10, 21, 35, 0.74);
+  --orb-1: rgba(56, 189, 248, 0.22);
+  --orb-2: rgba(129, 140, 248, 0.16);
+  --orb-3: rgba(45, 212, 191, 0.14);
+}
+
+[data-theme="midnight-botanical"] {
+  --bg: #070F0C;
+  --surface: rgba(13, 25, 20, 0.78);
+  --surface-solid: #0D1914;
+  --surface-2: rgba(212, 245, 226, 0.05);
+  --ink: #F2F7F4;
+  --muted: #8FA89B;
+  --accent: #34D399;
+  --accent-ink: #05140E;
+  --accent-2: #D97706;
+  --danger: #F43F5E;
+  --border: rgba(212, 245, 226, 0.09);
+  --border-strong: rgba(212, 245, 226, 0.18);
+  --glass: rgba(10, 21, 16, 0.78);
+  --orb-1: rgba(52, 211, 153, 0.20);
+  --orb-2: rgba(217, 119, 6, 0.16);
+  --orb-3: rgba(16, 185, 129, 0.14);
+}
+
 @layer base {
-  :root {
-    color-scheme: dark;
-  }
   body {
     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-    background-color: #090A0C;
-    background-image:
-      radial-gradient(ellipse 80% 50% at 50% -15%, rgba(16, 185, 129, 0.07), transparent 65%),
-      radial-gradient(ellipse 60% 40% at 90% 100%, rgba(59, 130, 246, 0.05), transparent 60%);
-    background-attachment: fixed;
-    color: #F5F2EB;
+    background-color: var(--bg);
+    color: var(--ink);
     margin: 0;
     overflow-x: hidden;
+    transition: background-color 0.45s ease, color 0.35s ease;
   }
 }
 
@@ -27,7 +117,100 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Custom subtle scrollbars */
+/* Live Animated Mesh Gradient Atmosphere */
+.hayye-mesh-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.hayye-orb {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(110px);
+  will-change: transform;
+}
+
+.hayye-orb-1 {
+  width: 55vw;
+  height: 55vw;
+  max-width: 720px;
+  max-height: 720px;
+  top: -18%;
+  left: -10%;
+  background: var(--orb-1);
+  animation: hayye-drift-1 22s ease-in-out infinite alternate;
+}
+
+.hayye-orb-2 {
+  width: 50vw;
+  height: 50vw;
+  max-width: 660px;
+  max-height: 660px;
+  bottom: -22%;
+  right: -8%;
+  background: var(--orb-2);
+  animation: hayye-drift-2 26s ease-in-out infinite alternate;
+}
+
+.hayye-orb-3 {
+  width: 40vw;
+  height: 40vw;
+  max-width: 520px;
+  max-height: 520px;
+  top: 35%;
+  left: 42%;
+  background: var(--orb-3);
+  animation: hayye-drift-3 30s ease-in-out infinite alternate;
+}
+
+@keyframes hayye-drift-1 {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  100% { transform: translate3d(8%, 10%, 0) scale(1.12); }
+}
+
+@keyframes hayye-drift-2 {
+  0% { transform: translate3d(0, 0, 0) scale(1.05); }
+  100% { transform: translate3d(-10%, -8%, 0) scale(0.95); }
+}
+
+@keyframes hayye-drift-3 {
+  0% { transform: translate3d(-6%, 4%, 0) scale(0.92); }
+  100% { transform: translate3d(8%, -6%, 0) scale(1.08); }
+}
+
+/* Tactile Film Grain Overlay */
+.hayye-grain {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.032;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Liquid Glass Surface Helpers */
+.glass-panel {
+  background: var(--glass);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--border);
+}
+
+.glass-card {
+  background: var(--surface);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid var(--border);
+  box-shadow: 0 18px 44px -18px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.glass-card:hover {
+  border-color: var(--border-strong);
+}
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -36,11 +219,8 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--border-strong);
   border-radius: 9999px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.22);
 }
 
 .no-scrollbar::-webkit-scrollbar {
