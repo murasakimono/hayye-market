@@ -83,4 +83,8 @@ export const api = {
   saveAlertSettings: (settings: AlertSettings) => invoke<void>('save_alert_settings', { settings }),
   testAlertChannels: (settings: AlertSettings) => invoke<string>('test_alert_channels', { settings }),
   openExternal: (url: string) => invoke<void>('open_external', { url }),
+  windowMinimize: () => invoke<void>('window_minimize'),
+  windowToggleMaximize: () => invoke<void>('window_toggle_maximize'),
+  windowClose: () => invoke<void>('window_close'),
+  windowStartDragging: () => invoke<void>('window_start_dragging'),
 };

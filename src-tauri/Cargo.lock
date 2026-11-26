@@ -1430,7 +1430,7 @@ dependencies = [
 
 [[package]]
 name = "hayye-market"
-version = "4.2.0"
+version = "4.2.1"
 dependencies = [
  "chrono",
  "regex",

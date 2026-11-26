@@ -607,6 +607,30 @@ fn open_external(url: String) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn window_minimize(window: tauri::Window) -> Result<(), String> {
+    window.minimize().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn window_toggle_maximize(window: tauri::Window) -> Result<(), String> {
+    if window.is_maximized().unwrap_or(false) {
+        window.unmaximize().map_err(|e| e.to_string())
+    } else {
+        window.maximize().map_err(|e| e.to_string())
+    }
+}
+
+#[tauri::command]
+fn window_close(window: tauri::Window) -> Result<(), String> {
+    window.close().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn window_start_dragging(window: tauri::Window) -> Result<(), String> {
+    window.start_dragging().map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -676,7 +700,11 @@ pub fn run() {
             get_alert_settings,
             save_alert_settings,
             test_alert_channels,
-            open_external
+            open_external,
+            window_minimize,
+            window_toggle_maximize,
+            window_close,
+            window_start_dragging
         ])
         .run(tauri::generate_context!())
         .expect("Hayye Market başlatılırken hata oluştu");

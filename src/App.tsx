@@ -16,6 +16,7 @@ import {
   Heart,
   Layers,
   LayoutGrid,
+  Minus,
   Package,
   Palette,
   RefreshCw,
@@ -25,6 +26,7 @@ import {
   Shirt,
   ShoppingBag,
   Sparkles,
+  Square,
   Ticket,
   Trash2,
   TrendingDown,
@@ -744,8 +746,21 @@ export default function App() {
       </div>
       <div className="hayye-grain" aria-hidden="true" />
 
-      {/* Editorial Liquid Glass Header */}
-      <header className="sticky top-0 z-30 px-6 py-3.5 glass-panel" style={{ borderLeft: 'none', borderRight: 'none', borderTop: 'none' }}>
+      {/* Editorial Liquid Glass Header (Unified Custom Frameless Titlebar) */}
+      <header
+        onMouseDown={(e) => {
+          if (e.button === 0 && !(e.target as HTMLElement).closest('button, input, a, form')) {
+            api.windowStartDragging().catch(() => {});
+          }
+        }}
+        onDoubleClick={(e) => {
+          if (!(e.target as HTMLElement).closest('button, input, a, form')) {
+            api.windowToggleMaximize().catch(() => {});
+          }
+        }}
+        className="sticky top-0 z-30 px-5 py-3 glass-panel select-none"
+        style={{ borderLeft: 'none', borderRight: 'none', borderTop: 'none' }}
+      >
         <div className="max-w-[1440px] mx-auto flex items-center gap-4">
           {/* Brand */}
           <div className="flex items-center gap-3 shrink-0">
@@ -942,6 +957,35 @@ export default function App() {
             >
               {currency === 'GOLD' ? 'ALTIN' : currency}
             </button>
+
+            {/* Integrated Theme-Matched Window Controls */}
+            <div className="w-px h-5 mx-1" style={{ background: 'var(--border-strong)' }} />
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => api.windowMinimize().catch(() => {})}
+                title="Küçült"
+                className="w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition hover:opacity-100 opacity-75"
+                style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--ink)' }}
+              >
+                <Minus className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => api.windowToggleMaximize().catch(() => {})}
+                title="Büyüt / Geri Yükle"
+                className="w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition hover:opacity-100 opacity-75"
+                style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--ink)' }}
+              >
+                <Square className="w-3 h-3" />
+              </button>
+              <button
+                onClick={() => api.windowClose().catch(() => {})}
+                title="Kapat"
+                className="w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition hover:bg-rose-500/85 hover:text-white hover:border-rose-400/60 opacity-85 hover:opacity-100"
+                style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--ink)' }}
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         </div>
       </header>
