@@ -167,6 +167,26 @@ export interface AlertSettings {
   discover_alerts_enabled: boolean;
   sound_enabled: boolean;
   auto_scan_enabled: boolean;
+  event_city: string;
+  event_radar_artists: string;
+  event_blacklist: string;
+}
+
+export interface EventItem {
+  id: string;
+  title: string;
+  category: string;
+  city: string;
+  venue: string;
+  date_label: string;
+  price_label: string;
+  image_url: string;
+  url: string;
+  source: string;
+  matches_radar: boolean;
+  vote_metehan: string;
+  vote_ilayda: string;
+  ticket_bought: boolean;
 }
 
 export interface VaultMetaUpdate {

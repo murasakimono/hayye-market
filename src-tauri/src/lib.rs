@@ -2,6 +2,7 @@ mod bridge;
 mod db;
 mod discover;
 mod events;
+mod events_feed;
 mod models;
 mod notify;
 mod scheduler;
@@ -405,6 +406,20 @@ async fn fetch_discover_deals() -> Result<Vec<DiscoverItem>, String> {
 }
 
 #[tauri::command]
+async fn fetch_live_events() -> Result<Vec<EventItem>, String> {
+    let settings = db::open_db().map(|c| db::load_settings(&c))?;
+    Ok(events_feed::fetch_live_events(&settings).await)
+}
+
+#[tauri::command]
+fn set_event_vote(event_id: String, who: String, vote: String, ticket_bought: Option<bool>) -> Result<(), String> {
+    let conn = db::open_db()?;
+    db::set_event_vote(&conn, &event_id, &who, &vote, ticket_bought)?;
+    events::emit("events_updated");
+    Ok(())
+}
+
+#[tauri::command]
 fn set_active_theme(theme: String) -> Result<(), String> {
     let conn = db::open_db()?;
     conn.execute(
@@ -644,6 +659,8 @@ pub fn run() {
             mark_purchased,
             freeze_price_snapshots,
             fetch_discover_deals,
+            fetch_live_events,
+            set_event_vote,
             set_active_theme,
             analyze_used_with_ollama,
             get_saved_total,

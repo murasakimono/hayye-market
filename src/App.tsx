@@ -25,6 +25,7 @@ import {
   Shirt,
   ShoppingBag,
   Sparkles,
+  Ticket,
   Trash2,
   TrendingDown,
   Truck,
@@ -50,6 +51,7 @@ import { THEMES, applyThemeToDom } from './themes';
 import {
   type DiscoverArchiveItem,
   type DiscoverItem,
+  type EventItem,
   type FolderItem,
   type MarketRates,
   type ProductDetail,
@@ -59,8 +61,9 @@ import {
   fmtUsd,
 } from './types';
 
-type DockTab = 'discover' | 'gallery' | 'radar' | 'shared' | 'moodboard' | 'orders';
+type DockTab = 'discover' | 'stage' | 'gallery' | 'radar' | 'shared' | 'moodboard' | 'orders';
 type DiscoverCategory = 'all' | 'personal' | 'flash' | 'tech' | 'fashion' | 'cosmetics' | 'home';
+type StageCategory = 'all' | 'radar' | 'konser' | 'tiyatro' | 'standup' | 'tickets';
 type CurrencyMode = 'TRY' | 'USD' | 'GOLD';
 
 function daysSince(iso: string | null): number {
@@ -125,6 +128,10 @@ export default function App() {
   const [discoverQuery, setDiscoverQuery] = useState('');
   const [discoverMin, setDiscoverMin] = useState('');
   const [discoverMax, setDiscoverMax] = useState('');
+  const [events, setEvents] = useState<EventItem[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [stageCat, setStageCat] = useState<StageCategory>('all');
+  const [stageQuery, setStageQuery] = useState('');
   const [modalTab, setModalTab] = useState<'overview' | 'vault' | 'used'>('overview');
   const [travelRewardPct, setTravelRewardPct] = useState(12);
   const [travelServicePct, setTravelServicePct] = useState(7);
@@ -314,11 +321,71 @@ export default function App() {
     }
   };
 
+  const loadEvents = async () => {
+    setEventsLoading(true);
+    try {
+      const list = await api.fetchLiveEvents();
+      setEvents(list);
+    } catch (err) {
+      notify(String(err));
+    } finally {
+      setEventsLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === 'discover' && discoverItems.length === 0 && !discoverLoading) {
       loadDiscover();
     }
+    if (activeTab === 'stage' && events.length === 0 && !eventsLoading) {
+      loadEvents();
+    }
   }, [activeTab]);
+
+  const handleEventVote = async (
+    eventId: string,
+    who: 'metehan' | 'ilayda',
+    vote: string,
+    ticketBought?: boolean | null
+  ) => {
+    try {
+      sound.playClick();
+      await api.setEventVote(eventId, who, vote, ticketBought);
+      setEvents((prev) =>
+        prev.map((ev) =>
+          ev.id === eventId
+            ? {
+                ...ev,
+                vote_metehan: who === 'metehan' ? vote : ev.vote_metehan,
+                vote_ilayda: who === 'ilayda' ? vote : ev.vote_ilayda,
+                ticket_bought:
+                  ticketBought !== undefined && ticketBought !== null ? ticketBought : ev.ticket_bought,
+              }
+            : ev
+        )
+      );
+    } catch (err) {
+      notify(String(err));
+    }
+  };
+
+  const filteredEvents = useMemo(() => {
+    const q = stageQuery.trim().toLowerCase();
+    return events.filter((ev) => {
+      if (stageCat === 'radar' && !ev.matches_radar) return false;
+      if (stageCat === 'tickets' && !ev.ticket_bought) return false;
+      if (stageCat === 'konser' && !['concert', 'festival', 'konser'].includes(ev.category.toLowerCase())) return false;
+      if (stageCat === 'tiyatro' && !['theater', 'tiyatro'].includes(ev.category.toLowerCase())) return false;
+      if (stageCat === 'standup' && !['standup', 'stand-up'].includes(ev.category.toLowerCase())) return false;
+      if (q && !(ev.title + ' ' + ev.venue + ' ' + ev.source).toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [events, stageCat, stageQuery]);
+
+  const radarEventCount = useMemo(
+    () => events.filter((ev) => ev.matches_radar).length,
+    [events]
+  );
 
   const filteredDiscover = useMemo(() => {
     const q = discoverQuery.trim().toLowerCase();
@@ -892,6 +959,7 @@ export default function App() {
               className="font-editorial text-4xl sm:text-5xl leading-none"
             >
               {activeTab === 'discover' && 'Keşfet — Gerçek İndirim Akışı'}
+              {activeTab === 'stage' && 'Sahne — İstanbul Etkinlik & Konser Radarı'}
               {activeTab === 'gallery' && 'Koleksiyon & Lookbook'}
               {activeTab === 'radar' && 'Canlı Fırsat Radarı'}
               {activeTab === 'shared' && 'Metehan × İlayda Ortak Pano'}
@@ -901,6 +969,8 @@ export default function App() {
             <p className="text-xs mt-2" style={{ color: 'var(--muted)' }}>
               {activeTab === 'discover' &&
                 `${discoverItems.length} doğrulanmış canlı düşüş • Anti-çöp filtreli, sahte bindirimden arındırılmış fırsatlar.`}
+              {activeTab === 'stage' &&
+                `${events.length} canlı İstanbul etkinliği • Kişisel sanatçı radarı aktif, kara liste filtrelendi • Metehan × İlayda ortak oylama.`}
               {activeTab === 'gallery' &&
                 `${folderProducts.length} takip edilen parça • Sepet Sıfır ${fmtPrice(basketTotals.newSum)}${
                   basketTotals.diff > 0 ? ` • 2. El Karma ile ${fmtPrice(basketTotals.diff)} tasarruf` : ''
@@ -1062,8 +1132,225 @@ export default function App() {
           </div>
         )}
 
-        {/* Editorial Magazine Discover View */}
-        {activeTab === 'discover' ? (
+        {/* Stage & Live Events View */}
+        {activeTab === 'stage' ? (
+          <div className="space-y-6">
+            {/* Search & Quick Ticket Portals */}
+            <div className="p-3 rounded-3xl glass-card flex flex-wrap items-center gap-2.5">
+              <div className="relative flex-1 min-w-[220px]">
+                <Search className="w-3.5 h-3.5 absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--muted)' }} />
+                <input
+                  value={stageQuery}
+                  onChange={(e) => setStageQuery(e.target.value)}
+                  placeholder="Sanatçı, oyun veya mekan ara (örn. Joker, Hidra, DKTT, Zorlu, Kadıköy)..."
+                  className="w-full rounded-full pl-9 pr-3 py-2 text-xs focus:outline-none"
+                  style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--ink)' }}
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                {[
+                  { label: 'Bubilet ↗', url: 'https://www.bubilet.com.tr/istanbul' },
+                  { label: 'Biletix ↗', url: 'https://www.biletix.com/anasayfa/TURKIYE/tr' },
+                  { label: 'Passo ↗', url: 'https://www.passo.com.tr/tr/kategori/muzik-konser-festival-biletleri/8615' },
+                  { label: 'Paribu Pass ↗', url: 'https://www.paribucineverse.com' },
+                  { label: 'Zorlu PSM ↗', url: 'https://www.zorlupsm.com/tr/etkinlikler' },
+                ].map((site) => (
+                  <button
+                    key={site.label}
+                    onClick={() => api.openExternal(site.url)}
+                    className="px-3 py-1.5 rounded-full cursor-pointer transition"
+                    style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--muted)' }}
+                  >
+                    {site.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Stage Category Pills & Refresh */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
+                {(
+                  [
+                    { id: 'all', label: `🎟 Tümü (${events.length})` },
+                    { id: 'radar', label: `✦ Radarım (${radarEventCount})` },
+                    { id: 'konser', label: '🎤 Konser & Müzik' },
+                    { id: 'tiyatro', label: '🎭 Tiyatro' },
+                    { id: 'standup', label: '🎙 Stand-Up' },
+                    { id: 'tickets', label: `✓ Biletlerim (${events.filter((e) => e.ticket_bought).length})` },
+                  ] as const
+                ).map((c) => {
+                  const act = stageCat === c.id;
+                  return (
+                    <button
+                      key={c.id}
+                      onClick={() => setStageCat(c.id)}
+                      className="px-4 py-1.5 rounded-full text-xs font-medium cursor-pointer shrink-0 transition"
+                      style={{
+                        background: act ? 'var(--ink)' : 'var(--surface-2)',
+                        color: act ? 'var(--bg)' : 'var(--muted)',
+                        border: '1px solid var(--border)',
+                      }}
+                    >
+                      {c.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <button
+                onClick={loadEvents}
+                disabled={eventsLoading}
+                className="px-4 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 cursor-pointer shrink-0"
+                style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${eventsLoading ? 'animate-spin' : ''}`} style={{ color: 'var(--accent)' }} />
+                {eventsLoading ? 'Taranıyor...' : 'Canlı Yenile'}
+              </button>
+            </div>
+
+            {eventsLoading && events.length === 0 ? (
+              <div className="rounded-3xl glass-card py-20 text-center text-xs" style={{ color: 'var(--muted)' }}>
+                Biletinial ve Mobilet İstanbul etkinlikleri canlı taranıyor, kara liste temizleniyor...
+              </div>
+            ) : filteredEvents.length === 0 ? (
+              <div className="rounded-3xl glass-card py-16 text-center text-xs" style={{ color: 'var(--muted)' }}>
+                Bu filtrede etkinlik bulunamadı. Tümünü görebilir veya üstteki Bubilet/Biletix/Passo kısayollarından Brave eklentisiyle ekleyebilirsin.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+                {filteredEvents.map((ev, idx) => {
+                  const bothGo = ev.vote_metehan === 'go' && ev.vote_ilayda === 'go';
+                  return (
+                    <motion.div
+                      key={ev.id}
+                      initial={{ opacity: 0, y: 14 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ type: 'spring', stiffness: 320, damping: 28, delay: Math.min(idx * 0.02, 0.2) }}
+                      whileHover={{ y: -5 }}
+                      className="rounded-3xl glass-card overflow-hidden flex flex-col"
+                      style={{
+                        border: ev.matches_radar ? '1px solid color-mix(in srgb, var(--accent) 55%, transparent)' : undefined,
+                      }}
+                    >
+                      <div className="relative aspect-[16/10] overflow-hidden" style={{ background: 'var(--surface-2)' }}>
+                        {ev.image_url ? (
+                          <img src={ev.image_url} alt={ev.title} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center opacity-20">
+                            <Ticket className="w-10 h-10" />
+                          </div>
+                        )}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/15 to-black/35" />
+                        <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-black/60 text-white/90 border border-white/15">
+                            {ev.source} • {ev.category === 'concert' ? 'Konser' : ev.category === 'theater' ? 'Tiyatro' : ev.category === 'standup' ? 'Stand-Up' : ev.category === 'festival' ? 'Festival' : ev.category}
+                          </span>
+                          {ev.matches_radar && (
+                            <span
+                              className="px-2.5 py-0.5 rounded-full text-[10px] font-bold"
+                              style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}
+                            >
+                              ✦ RADARIM
+                            </span>
+                          )}
+                          {ev.ticket_bought && (
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/90 text-black">
+                              🎟 BİLET ALINDI
+                            </span>
+                          )}
+                          {bothGo && (
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-400/90 text-black">
+                              ♥ İKİMİZ DE GİDELİM
+                            </span>
+                          )}
+                        </div>
+                        <div className="absolute bottom-2.5 left-3.5 right-3.5 flex items-end justify-between gap-2 text-white">
+                          <span className="text-[11px] font-mono-num font-semibold truncate">
+                            {ev.date_label || ev.city}
+                          </span>
+                          {ev.price_label && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-mono-num bg-black/60 border border-white/15 shrink-0">
+                              {ev.price_label}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="p-4 flex-1 flex flex-col gap-3">
+                        <div>
+                          <div className="text-sm font-semibold line-clamp-2 leading-snug">{ev.title}</div>
+                          <div className="text-[11px] mt-1 truncate" style={{ color: 'var(--muted)' }}>
+                            {ev.venue || ev.city}
+                          </div>
+                        </div>
+
+                        {/* Shared Metehan x Ilayda Event Voting */}
+                        <div className="space-y-1.5 pt-2 text-[11px]" style={{ borderTop: '1px solid var(--border)' }}>
+                          {(['metehan', 'ilayda'] as const).map((who) => {
+                            const cur = who === 'metehan' ? ev.vote_metehan : ev.vote_ilayda;
+                            return (
+                              <div key={who} className="flex items-center justify-between gap-2">
+                                <span style={{ color: 'var(--muted)' }}>{who === 'ilayda' ? 'İlayda' : 'Metehan'}</span>
+                                <div className="flex gap-1">
+                                  {(
+                                    [
+                                      { id: 'go', label: 'Gidelim', c: '#10B981', bg: 'rgba(16,185,129,0.18)' },
+                                      { id: 'maybe', label: 'Belki', c: '#F59E0B', bg: 'rgba(245,158,11,0.16)' },
+                                      { id: 'pass', label: 'Pas', c: '#F43F5E', bg: 'rgba(244,63,94,0.16)' },
+                                    ] as const
+                                  ).map((opt) => {
+                                    const act = cur === opt.id;
+                                    return (
+                                      <button
+                                        key={opt.id}
+                                        onClick={() => handleEventVote(ev.id, who, act ? '' : opt.id, null)}
+                                        className="px-2 py-0.5 rounded-full text-[10px] font-semibold cursor-pointer transition"
+                                        style={{
+                                          background: act ? opt.bg : 'transparent',
+                                          color: act ? opt.c : 'var(--muted)',
+                                          border: `1px solid ${act ? opt.c : 'var(--border)'}`,
+                                        }}
+                                      >
+                                        {opt.label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        <div className="mt-auto pt-2 flex items-center gap-1.5" style={{ borderTop: '1px solid var(--border)' }}>
+                          <button
+                            onClick={() => api.openExternal(ev.url)}
+                            className="flex-1 py-2 px-2.5 rounded-xl text-[11px] font-bold cursor-pointer transition flex items-center justify-center gap-1"
+                            style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}
+                          >
+                            <Zap className="w-3 h-3" /> Bilet Ekranı
+                          </button>
+                          <button
+                            onClick={() => handleEventVote(ev.id, 'metehan', ev.vote_metehan, !ev.ticket_bought)}
+                            className="py-2 px-3 rounded-xl text-[11px] font-semibold cursor-pointer transition"
+                            style={{
+                              background: ev.ticket_bought
+                                ? 'color-mix(in srgb, var(--accent) 20%, transparent)'
+                                : 'var(--surface-2)',
+                              color: ev.ticket_bought ? 'var(--accent)' : 'var(--ink)',
+                              border: '1px solid var(--border)',
+                            }}
+                          >
+                            {ev.ticket_bought ? 'Alındı ✓' : 'Aldım'}
+                          </button>
+                        </div>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : activeTab === 'discover' ? (
           <div className="space-y-6">
             {/* Price Range + Keyword Live Filter & Market Search */}
             <form
@@ -1616,6 +1903,7 @@ export default function App() {
           {(
             [
               { id: 'discover', label: 'Keşfet', icon: Compass, badge: 0 },
+              { id: 'stage', label: 'Sahne', icon: Ticket, badge: radarEventCount },
               { id: 'gallery', label: 'Galeri', icon: LayoutGrid, badge: 0 },
               { id: 'radar', label: 'Radar', icon: Flame, badge: radarProducts.length },
               { id: 'shared', label: 'Ortak', icon: Users, badge: 0 },
@@ -2458,6 +2746,7 @@ export default function App() {
             onClose={() => setShowPalette(false)}
             actions={[
               { id: 'disc', label: 'Keşfet — Gerçek İndirim Akışına Git', hint: 'Canlı 120+ düşüş', icon: <PaletteIcons.Compass className="w-4 h-4" />, run: () => setActiveTab('discover') },
+              { id: 'stg', label: 'Sahne — İstanbul Konser & Etkinlik Radarı', hint: 'Biletinial, Mobilet, Bubilet', icon: <Ticket className="w-4 h-4" />, run: () => setActiveTab('stage') },
               { id: 'gal', label: 'Koleksiyon & Lookbook', icon: <PaletteIcons.LayoutGrid className="w-4 h-4" />, run: () => setActiveTab('gallery') },
               { id: 'shr', label: 'Metehan × İlayda Ortak Pano', icon: <PaletteIcons.Users className="w-4 h-4" />, run: () => setActiveTab('shared') },
               { id: 'mb', label: 'Kombin & Ev Moodboard', icon: <PaletteIcons.Layers className="w-4 h-4" />, run: () => setActiveTab('moodboard') },

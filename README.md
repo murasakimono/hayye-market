@@ -3,9 +3,9 @@
   <h1>HAYYE MARKET</h1>
   <p><strong>Türkiye'nin Evrensel Fiyat, Stok, Moda/Kozmetik, 2. El &amp; Keşfet İstihbarat İşletim Sistemi</strong></p>
   <p>
-    <img src="https://img.shields.io/badge/version-4.1.0-10B981?style=for-the-badge" alt="Version 4.1.0" />
+    <img src="https://img.shields.io/badge/version-4.2.0-10B981?style=for-the-badge" alt="Version 4.2.0" />
     <img src="https://img.shields.io/badge/Tauri%20v2%20%2B%20Rust-080A0D?style=for-the-badge&logo=rust&logoColor=white" alt="Tauri v2 + Rust" />
-    <img src="https://img.shields.io/badge/65%2B%20TR%20Mağaza-3B82F6?style=for-the-badge" alt="65+ Mağaza" />
+    <img src="https://img.shields.io/badge/75%2B%20TR%20Mağaza%20%26%20Bilet-3B82F6?style=for-the-badge" alt="75+ Mağaza & Bilet" />
     <img src="https://img.shields.io/badge/iOS%20%26%20iPadOS%20PWA-11141A?style=for-the-badge&logo=apple&logoColor=white" alt="iOS PWA" />
   </p>
 </div>
@@ -45,6 +45,7 @@ flowchart LR
 | Modül | Ne Yapar? |
 | :--- | :--- |
 | **Keşfet (Discover) & Fiyat Aralıklı Arama** | 120+ canlı doğrulanmış fiyat düşüşünü tarar; **Günün En Büyük 5 Düşüşü** vitrini, **Sezon & Kampanya Takvimi** (Inditex, İncehesap Gaming Gecesi Cuma 22:00, Sephora/Gratis, Prime Day), **Anti-Çöp Susturma** ve **`Min ₺ – Max ₺` fiyat aralıklı canlı arama** (örn. *1000–1500 ₺ kulaklık*). |
+| **Sahne & Etkinlik Radarı (v4.2)** | **Biletinial** ve **Mobilet** üzerinden canlı İstanbul konser/tiyatro/stand-up akışı + Brave eklentisinde **Bubilet, Biletix, Passo, Biletino, Paribu Pass, Zorlu PSM** desteği. Kişisel sanatçı radarı push bildirimi, kara liste filtresi, **Metehan × İlayda "Gidelim / Belki / Pas"** ortak oylaması ve 1-tık Sniper bilet ekranı. |
 | **Sahte İndirim Dedektörü & TL / USD / Gram Altın** | Fiyat geçmişini TL, canlı USD ve **Gram Altın** bazında ölçer; bindirim sonrası sahte indirimi anında yakalar. Sezon öncesi tek tık **Fiyat Dondur (Snapshot)**. |
 | **5 Canlı Atmosferik Tema + Framer Motion** | `Obsidian Aurora`, `Noir Velvet`, `Atelier Ivory` (aydınlık editoryal), `Arctic Frost` (visionOS buzlu cam), `Midnight Botanical` — Masaüstü, Brave Yan Panel ve iOS PWA tek merkezden senkron. Prosedürel **WebAudio** mikro sesler, **Apple Music adaptif ürün rengi** ve **`Ctrl+K` Komut Paleti**. |
 | **Moda, Inditex & Kozmetik Zekâsı** | `ikas`, `Shopify` (Sniper 1-tık sepet linki) ve `JSON-LD` ayrıştırıcı; **Beden Bazlı Stok Alarmı** (`SINT 07:00–09:00` sık tarama), **Inditex Dalga Tahmincisi**, **10 ml / 10 gr birim fiyat**, **Batch Code** ve **Parfüm Muadil (Dupe)** kartı. |
@@ -58,7 +59,7 @@ flowchart LR
 ## Kurulum
 
 ### 1. Windows Masaüstü Uygulaması
-[Releases](https://github.com/murasakimono/hayye-market/releases/latest) sayfasından **`Hayye Market_4.1.0_x64-setup.exe`** dosyasını indirip kur.
+[Releases](https://github.com/murasakimono/hayye-market/releases/latest) sayfasından **`Hayye Market_4.2.0_x64-setup.exe`** dosyasını indirip kur.
 
 ### 2. 65+ Mağazalı Brave / Chromium Yan Panel Eklentisi
 1. `brave://extensions` (veya `chrome://extensions`) adresini aç ve **Geliştirici modu**nu etkinleştir.

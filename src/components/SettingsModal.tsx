@@ -28,6 +28,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onToast, 
     discover_alerts_enabled: true,
     sound_enabled: true,
     auto_scan_enabled: true,
+    event_city: 'istanbul',
+    event_radar_artists:
+      'joker, hidra, allame, contra, saian, stabil, wegh, manifest, dktt, dolu kadehi ters tut, crush, perma, kum, ataberk kurnaz, şanışer, defkhan, kayra, no.1, şehinşah, ceza, hayki, patron, sansar salvo',
+    event_blacklist:
+      'lvbel c5, organize, batuflex, ege!, motive, ati242, sagopa kajmer, gazapizm, uzi, çakal, blok3, era7capone',
   });
   const [mobile, setMobile] = useState<MobileAccessInfo | null>(null);
   const [testing, setTesting] = useState(false);
@@ -235,6 +240,42 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onToast, 
                 <input
                   value={settings.discover_muted}
                   onChange={(e) => setSettings({ ...settings, discover_muted: e.target.value })}
+                  className="w-full rounded-xl px-3 py-2 text-xs focus:outline-none"
+                  style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--ink)' }}
+                />
+              </label>
+            </div>
+          </div>
+
+          {/* Stage / Events Radar & Blacklist */}
+          <div className="space-y-2.5 pt-3" style={{ borderTop: '1px solid var(--border)' }}>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold" style={{ color: 'var(--accent)' }}>
+                Sahne & Etkinlik Radarı (Biletinial, Mobilet, Bubilet, Biletix)
+              </span>
+              <input
+                value={settings.event_city}
+                onChange={(e) => setSettings({ ...settings, event_city: e.target.value })}
+                placeholder="istanbul"
+                className="w-28 rounded-xl px-2.5 py-1 text-xs font-mono-num focus:outline-none"
+                style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--ink)' }}
+              />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+              <label className="space-y-1 block">
+                <span className="text-[11px] block" style={{ color: 'var(--muted)' }}>Sanatçı / Grup Radarı (Anlık Bildirim)</span>
+                <input
+                  value={settings.event_radar_artists}
+                  onChange={(e) => setSettings({ ...settings, event_radar_artists: e.target.value })}
+                  className="w-full rounded-xl px-3 py-2 text-xs focus:outline-none"
+                  style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--ink)' }}
+                />
+              </label>
+              <label className="space-y-1 block">
+                <span className="text-[11px] block" style={{ color: 'var(--muted)' }}>Kara Liste (Kesinlikle Gizle)</span>
+                <input
+                  value={settings.event_blacklist}
+                  onChange={(e) => setSettings({ ...settings, event_blacklist: e.target.value })}
                   className="w-full rounded-xl px-3 py-2 text-xs focus:outline-none"
                   style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--ink)' }}
                 />

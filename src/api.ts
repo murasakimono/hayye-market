@@ -4,6 +4,7 @@ import type {
   AlertSettings,
   DiscoverArchiveItem,
   DiscoverItem,
+  EventItem,
   FolderItem,
   MarketRates,
   MobileAccessInfo,
@@ -50,6 +51,9 @@ export const api = {
     invoke<void>('mark_purchased', { productId, priceTry }),
   freezePriceSnapshots: () => invoke<number>('freeze_price_snapshots'),
   fetchDiscoverDeals: () => invoke<DiscoverItem[]>('fetch_discover_deals'),
+  fetchLiveEvents: () => invoke<EventItem[]>('fetch_live_events'),
+  setEventVote: (eventId: string, who: 'metehan' | 'ilayda', vote: string, ticketBought?: boolean | null) =>
+    invoke<void>('set_event_vote', { eventId, who, vote, ticketBought: ticketBought ?? null }),
   setActiveTheme: (theme: string) => invoke<void>('set_active_theme', { theme }),
   analyzeUsedWithOllama: (
     title: string,

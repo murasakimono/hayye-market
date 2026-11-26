@@ -109,6 +109,10 @@ fn init_schema(conn: &Connection) -> Result<(), String> {
         "CREATE TABLE IF NOT EXISTS discover_archive (deal_id TEXT PRIMARY KEY, title TEXT NOT NULL, brand TEXT NOT NULL, category TEXT NOT NULL, price_try REAL NOT NULL, drop_pct REAL NOT NULL, url TEXT NOT NULL, seen_at TEXT NOT NULL)",
         [],
     );
+    let _ = conn.execute(
+        "CREATE TABLE IF NOT EXISTS event_votes (event_id TEXT PRIMARY KEY, vote_metehan TEXT NOT NULL DEFAULT '', vote_ilayda TEXT NOT NULL DEFAULT '', ticket_bought INTEGER NOT NULL DEFAULT 0)",
+        [],
+    );
 
     // Seed default folders
     for name in ["Genel", "Giyim & Inditex", "Kozmetik", "Yeni PC Toplama", "Mutfak Çeyiz", "2. El Avı"] {
@@ -918,6 +922,44 @@ pub fn list_discover_archive(conn: &Connection) -> Result<Vec<DiscoverArchiveIte
     Ok(items)
 }
 
+pub fn load_event_votes(conn: &Connection) -> Result<std::collections::HashMap<String, (String, String, bool)>, String> {
+    let mut stmt = conn
+        .prepare("SELECT event_id, vote_metehan, vote_ilayda, ticket_bought FROM event_votes")
+        .map_err(|e| e.to_string())?;
+    let mut map = std::collections::HashMap::new();
+    let rows = stmt
+        .query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, i64>(3)? != 0,
+            ))
+        })
+        .map_err(|e| e.to_string())?;
+    for r in rows.flatten() {
+        map.insert(r.0, (r.1, r.2, r.3));
+    }
+    Ok(map)
+}
+
+pub fn set_event_vote(conn: &Connection, event_id: &str, who: &str, vote: &str, ticket_bought: Option<bool>) -> Result<(), String> {
+    conn.execute(
+        "INSERT OR IGNORE INTO event_votes (event_id, vote_metehan, vote_ilayda, ticket_bought) VALUES (?1, '', '', 0)",
+        params![event_id],
+    ).map_err(|e| e.to_string())?;
+    if !who.is_empty() {
+        let col = if who.eq_ignore_ascii_case("ilayda") { "vote_ilayda" } else { "vote_metehan" };
+        let sql = format!("UPDATE event_votes SET {} = ?1 WHERE event_id = ?2", col);
+        conn.execute(&sql, params![vote, event_id]).map_err(|e| e.to_string())?;
+    }
+    if let Some(b) = ticket_bought {
+        conn.execute("UPDATE event_votes SET ticket_bought = ?1 WHERE event_id = ?2", params![if b { 1 } else { 0 }, event_id])
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 pub fn save_push_subscription(conn: &Connection, endpoint: &str, p256dh: &str, auth: &str, who: &str) -> Result<(), String> {
     conn.execute(
         "INSERT INTO push_subscriptions (endpoint, p256dh, auth, who, created_at) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(endpoint) DO UPDATE SET p256dh=excluded.p256dh, auth=excluded.auth, who=excluded.who",
@@ -971,6 +1013,15 @@ pub fn load_settings(conn: &Connection) -> AlertSettings {
         discover_alerts_enabled: get("discover_alerts_enabled", "1") != "0",
         sound_enabled: get("sound_enabled", "1") != "0",
         auto_scan_enabled: get("auto_scan_enabled", "1") != "0",
+        event_city: get("event_city", "İstanbul"),
+        event_radar_artists: get(
+            "event_radar_artists",
+            "joker, hidra, allame, contra, saian, stabil, wegh, manifest, dktt, dolu kadehi ters tut, crush, perma, kum, ataberk kurnaz, şanışer, defkhan, kayra, no.1, şehinşah, ceza, hayki, patron, sansar salvo",
+        ),
+        event_blacklist: get(
+            "event_blacklist",
+            "lvbel c5, organize, batuflex, ege!, motive, ati242, sagopa kajmer, gazapizm, uzi, çakal, blok3, era7capone",
+        ),
     }
 }
 
@@ -992,6 +1043,9 @@ pub fn save_settings(conn: &Connection, s: &AlertSettings) -> Result<(), String>
         ("discover_alerts_enabled", if s.discover_alerts_enabled { "1" } else { "0" }.to_string()),
         ("sound_enabled", if s.sound_enabled { "1" } else { "0" }.to_string()),
         ("auto_scan_enabled", if s.auto_scan_enabled { "1" } else { "0" }.to_string()),
+        ("event_city", s.event_city.clone()),
+        ("event_radar_artists", s.event_radar_artists.clone()),
+        ("event_blacklist", s.event_blacklist.clone()),
     ];
     for (k, v) in pairs {
         conn.execute(

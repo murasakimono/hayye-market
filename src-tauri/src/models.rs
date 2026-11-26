@@ -163,6 +163,27 @@ pub struct AlertSettings {
     pub discover_alerts_enabled: bool,
     pub sound_enabled: bool,
     pub auto_scan_enabled: bool,
+    pub event_city: String,
+    pub event_radar_artists: String,
+    pub event_blacklist: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EventItem {
+    pub id: String,
+    pub title: String,
+    pub category: String,
+    pub city: String,
+    pub venue: String,
+    pub date_label: String,
+    pub price_label: String,
+    pub image_url: String,
+    pub url: String,
+    pub source: String,
+    pub matches_radar: bool,
+    pub vote_metehan: String,
+    pub vote_ilayda: String,
+    pub ticket_bought: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

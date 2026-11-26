@@ -161,7 +161,7 @@ const IOS_PWA_HTML: &str = r##"<!doctype html>
       background: var(--surf); backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px);
       border: 1px solid var(--bdr); box-shadow: 0 14px 36px rgba(0,0,0,.45);
     }
-    .d-btn { border: none; background: transparent; color: var(--muted); font-size: 12px; font-weight: 600; padding: 8px 13px; border-radius: 999px; cursor: pointer; white-space: nowrap; }
+    .d-btn { border: none; background: transparent; color: var(--muted); font-size: 11px; font-weight: 600; padding: 8px 10px; border-radius: 999px; cursor: pointer; white-space: nowrap; }
     .d-btn.active { background: var(--ink); color: var(--bg); }
   </style>
 </head>
@@ -189,6 +189,7 @@ const IOS_PWA_HTML: &str = r##"<!doctype html>
   </div>
   <nav class="dock">
     <button id="t-discover" class="d-btn" onclick="setTab('discover')">Keşfet</button>
+    <button id="t-stage" class="d-btn" onclick="setTab('stage')">Sahne</button>
     <button id="t-gallery" class="d-btn active" onclick="setTab('gallery')">Galeri</button>
     <button id="t-radar" class="d-btn" onclick="setTab('radar')">Radar</button>
     <button id="t-shared" class="d-btn" onclick="setTab('shared')">Ortak</button>
@@ -202,6 +203,7 @@ const IOS_PWA_HTML: &str = r##"<!doctype html>
     let tab = 'gallery';
     let cache = [];
     let discoverCache = [];
+    let eventsCache = [];
     let curTheme = 'obsidian-aurora';
 
     function applyTheme(t) {
@@ -220,12 +222,26 @@ const IOS_PWA_HTML: &str = r##"<!doctype html>
     function setWho(w) { who = w; localStorage.setItem('hayye_who', w); syncWhoUI(); render(); }
     function setTab(t) {
       tab = t;
-      ['discover','gallery','radar','shared','orders'].forEach(x => {
+      ['discover','stage','gallery','radar','shared','orders'].forEach(x => {
         document.getElementById('t-' + x).className = 'd-btn' + (x === t ? ' active' : '');
       });
       document.getElementById('hint').style.display = t === 'shared' ? 'block' : 'none';
       if (t === 'discover' && !discoverCache.length) { loadDiscover(); }
+      else if (t === 'stage' && !eventsCache.length) { loadEvents(); }
       else { render(); }
+    }
+    async function loadEvents() {
+      document.getElementById('list').innerHTML = '<div class="card"><div class="body" style="text-align:center;color:var(--muted)">İstanbul konser & etkinlikleri taranıyor...</div></div>';
+      const r = await fetch('/api/events-feed');
+      eventsCache = await r.json();
+      render();
+    }
+    async function voteEvent(eid, v, bought) {
+      await fetch('/api/event-vote', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ event_id: eid, who, vote: v, ticket_bought: bought })
+      });
+      await loadEvents();
     }
     async function loadDiscover() {
       document.getElementById('list').innerHTML = '<div class="card"><div class="body" style="text-align:center;color:var(--muted)">Gerçek indirimler taranıyor...</div></div>';
@@ -281,6 +297,47 @@ const IOS_PWA_HTML: &str = r##"<!doctype html>
 
     function render() {
       const el = document.getElementById('list');
+      if (tab === 'stage') {
+        if (!eventsCache.length) {
+          el.innerHTML = '<div class="card"><div class="body" style="text-align:center;color:var(--muted)">Etkinlik bulunamadı.</div></div>';
+          return;
+        }
+        el.innerHTML = eventsCache.slice(0, 45).map(ev => {
+          const myV = who === 'ilayda' ? ev.vote_ilayda : ev.vote_metehan;
+          const othV = who === 'ilayda' ? ev.vote_metehan : ev.vote_ilayda;
+          const othN = who === 'ilayda' ? 'Metehan' : 'İlayda';
+          const vT = v => v === 'go' ? 'Gidelim ✓' : v === 'maybe' ? 'Belki' : v === 'pass' ? 'Pas' : '—';
+          return `<div class="card">
+            ${ev.image_url ? `<div class="hero"><img src="${ev.image_url}" alt="" /><div class="hero-grad"></div>
+              <div class="pill-top">
+                <span class="badge">${ev.source} • ${ev.category}</span>
+                ${ev.matches_radar ? '<span class="badge dip">✦ RADARIM</span>' : ''}
+                ${ev.ticket_bought ? '<span class="badge dip">🎟 BİLET ALINDI</span>' : ''}
+                ${ev.vote_metehan === 'go' && ev.vote_ilayda === 'go' ? '<span class="badge dip">İKİMİZ DE GİDELİM ✓</span>' : ''}
+              </div>
+              <div class="price-ov"><div class="price" style="font-size:15px">${ev.date_label || ev.city}</div>
+                ${ev.price_label ? `<span class="used-pill">${ev.price_label}</span>` : ''}
+              </div></div>` : ''}
+            <div class="body">
+              <div class="title">${ev.title}</div>
+              <div class="meta"><span>${ev.venue || ev.city}</span><span>${ev.source}</span></div>
+              <div class="votes">
+                <div class="v-btns">
+                  <button class="v-btn ${myV==='go'?'buy':''}" onclick="voteEvent('${ev.id}', '${myV==='go'?'':'go'}', null)">Gidelim</button>
+                  <button class="v-btn ${myV==='maybe'?'wait':''}" onclick="voteEvent('${ev.id}', '${myV==='maybe'?'':'maybe'}', null)">Belki</button>
+                  <button class="v-btn ${myV==='pass'?'pass':''}" onclick="voteEvent('${ev.id}', '${myV==='pass'?'':'pass'}', null)">Pas</button>
+                </div>
+                <span style="font-size:11px;color:var(--muted)">${othN}: ${vT(othV)}</span>
+              </div>
+              <div class="actions">
+                <a class="a-btn sniper" href="${ev.url}" target="_blank">🎟 Bilet Ekranı ↗</a>
+                <button class="a-btn" onclick="voteEvent('${ev.id}', '${myV}', ${!ev.ticket_bought})">${ev.ticket_bought ? 'Bilet Alındı ✓' : 'Bilet Aldım'}</button>
+              </div>
+            </div>
+          </div>`;
+        }).join('');
+        return;
+      }
       if (tab === 'discover') {
         if (!discoverCache.length) {
           el.innerHTML = '<div class="card"><div class="body" style="text-align:center;color:var(--muted)">Fırsat bulunamadı.</div></div>';
@@ -501,7 +558,45 @@ pub fn spawn_bridge_server() {
                 } else if method == "GET" && path == "/manifest.webmanifest" {
                     ("200 OK", "application/manifest+json", MANIFEST_JSON.to_string())
                 } else if method == "GET" && path == "/ping" {
-                    ("200 OK", "application/json", r#"{"ok":true,"app":"Hayye Market","version":"4.1.0"}"#.to_string())
+                    ("200 OK", "application/json", r#"{"ok":true,"app":"Hayye Market","version":"4.2.0"}"#.to_string())
+                } else if method == "GET" && path == "/api/events-feed" {
+                    let settings = db::open_db().map(|c| db::load_settings(&c)).unwrap_or(crate::models::AlertSettings {
+                        discord_webhook: String::new(),
+                        telegram_bot_token: String::new(),
+                        telegram_chat_id: String::new(),
+                        ntfy_topic: String::new(),
+                        refresh_interval_min: 45,
+                        cloudflare_tunnel_url: String::new(),
+                        cloudflare_tunnel_token: String::new(),
+                        cloudflare_worker_key: String::new(),
+                        active_theme: "obsidian-aurora".to_string(),
+                        monthly_budget_try: 15000.0,
+                        user_cards: String::new(),
+                        discover_keywords: String::new(),
+                        discover_muted: String::new(),
+                        discover_alerts_enabled: false,
+                        sound_enabled: true,
+                        auto_scan_enabled: true,
+                        event_city: "istanbul".to_string(),
+                        event_radar_artists: String::new(),
+                        event_blacklist: String::new(),
+                    });
+                    let list = crate::events_feed::fetch_live_events(&settings).await;
+                    ("200 OK", "application/json", serde_json::to_string(&list).unwrap_or_else(|_| "[]".into()))
+                } else if method == "POST" && path == "/api/event-vote" {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(body_str) {
+                        let eid = v["event_id"].as_str().unwrap_or("");
+                        let who = v["who"].as_str().unwrap_or("metehan");
+                        let vote = v["vote"].as_str().unwrap_or("");
+                        let bought = v["ticket_bought"].as_bool();
+                        if !eid.is_empty() {
+                            let _ = db::open_db().and_then(|c| db::set_event_vote(&c, eid, who, vote, bought));
+                            crate::events::emit("event_vote_updated");
+                        }
+                        ("200 OK", "application/json", r#"{"ok":true}"#.to_string())
+                    } else {
+                        ("400 Bad Request", "application/json", r#"{"error":"Geçersiz JSON"}"#.to_string())
+                    }
                 } else if method == "POST" && path == "/api/push/subscribe" {
                     if let Ok(v) = serde_json::from_str::<serde_json::Value>(body_str) {
                         let ep = v["endpoint"].as_str().unwrap_or("");
@@ -533,6 +628,9 @@ pub fn spawn_bridge_server() {
                         discover_alerts_enabled: false,
                         sound_enabled: true,
                         auto_scan_enabled: true,
+                        event_city: "istanbul".to_string(),
+                        event_radar_artists: String::new(),
+                        event_blacklist: String::new(),
                     });
                     let list = crate::discover::fetch_discover_feed(&settings).await;
                     ("200 OK", "application/json", serde_json::to_string(&list).unwrap_or_else(|_| "[]".into()))
