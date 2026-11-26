@@ -38,57 +38,94 @@ async fn fetch_biletinial_cat(
     let mut out = Vec::new();
     let mut seen = HashSet::new();
 
-    // Direct anchor scan for Biletinial event cards (works regardless of wrapper tag)
-    if let Ok(a_sel) = Selector::parse("a[href*='/tr-tr/']") {
+    // Parse Biletinial `.hpv2-event-card` containers (captures poster img + h3 title + address venue)
+    if let Ok(card_sel) = Selector::parse(".hpv2-event-card, li.search-result-item, article") {
+        let a_sel = Selector::parse("h3 a[href*='/tr-tr/'], a[href*='/tr-tr/']").unwrap();
         let img_sel = Selector::parse("img").unwrap();
-        let h_sel = Selector::parse("h2, h3, h4, strong, figcaption").unwrap();
+        let addr_sel = Selector::parse("address, .hpv2-event-card__meta").unwrap();
+        let date_sel = Selector::parse("time, .hpv2-event-card__date, span[class*='date']").unwrap();
 
-        for a in doc.select(&a_sel) {
-            let href = a.value().attr("href").unwrap_or("").trim();
+        for card in doc.select(&card_sel) {
+            let mut target_href = String::new();
+            let mut title = String::new();
             let prefix = format!("/tr-tr/{}/", cat_slug);
-            let rel = if let Some(idx) = href.find(&prefix) {
-                &href[idx..]
-            } else {
-                continue;
-            };
-            // Skip city listing root or category root
-            let segs: Vec<&str> = rel.trim_matches('/').split('/').collect();
-            if segs.len() < 3 || segs[2] == city_slug || segs[2].starts_with('?') {
+
+            for a in card.select(&a_sel) {
+                let href = a.value().attr("href").unwrap_or("").trim();
+                let Some(idx) = href.find(&prefix) else { continue };
+                let rel = &href[idx..];
+                let segs: Vec<&str> = rel.trim_matches('/').split('/').collect();
+                if segs.len() < 3 || segs[2] == city_slug || segs[2].starts_with('?') {
+                    continue;
+                }
+                if target_href.is_empty() {
+                    target_href = rel.to_string();
+                }
+                let cand = a
+                    .value()
+                    .attr("data-slider-item")
+                    .or_else(|| a.value().attr("title"))
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| s.len() >= 3)
+                    .or_else(|| {
+                        let t = a.text().collect::<String>().split_whitespace().collect::<Vec<_>>().join(" ");
+                        if t.len() >= 3 && t.len() <= 120 { Some(t) } else { None }
+                    });
+                if let Some(t) = cand {
+                    title = t;
+                    target_href = rel.to_string();
+                    break;
+                }
+            }
+
+            if target_href.is_empty() || title.len() < 3 {
                 continue;
             }
-            let full_url = format!("https://biletinial.com{}", rel);
+            let full_url = format!("https://biletinial.com{}", target_href);
             if !seen.insert(full_url.clone()) {
                 continue;
             }
-            let title = a
-                .select(&h_sel)
-                .next()
-                .map(|h| h.text().collect::<String>().split_whitespace().collect::<Vec<_>>().join(" "))
-                .filter(|s| s.len() >= 3)
-                .or_else(|| a.value().attr("title").map(|s| s.trim().to_string()).filter(|s| s.len() >= 3))
-                .or_else(|| {
-                    let t = a.text().collect::<String>().split_whitespace().collect::<Vec<_>>().join(" ");
-                    if t.len() >= 3 && t.len() <= 110 { Some(t) } else { None }
-                })
-                .unwrap_or_default();
-            if title.len() < 3 || title.len() > 140 {
-                continue;
-            }
-            let img = a
+            let img = card
                 .select(&img_sel)
-                .next()
-                .and_then(|im| im.value().attr("data-src").or_else(|| im.value().attr("src")))
-                .map(|s| if s.starts_with("//") { format!("https:{}", s) } else { s.to_string() })
-                .filter(|s| s.starts_with("http"))
+                .filter_map(|im| {
+                    im.value()
+                        .attr("data-src")
+                        .or_else(|| im.value().attr("data-original"))
+                        .or_else(|| im.value().attr("src"))
+                })
+                .map(|s| {
+                    let s = s.trim();
+                    if s.starts_with("//") {
+                        format!("https:{}", s)
+                    } else if s.starts_with('/') {
+                        format!("https://biletinial.com{}", s)
+                    } else {
+                        s.to_string()
+                    }
+                })
+                .find(|s| s.starts_with("http") && !s.contains("data:image") && !s.ends_with(".svg"))
                 .unwrap_or_default();
 
+            let venue = card
+                .select(&addr_sel)
+                .next()
+                .map(|v| v.text().collect::<String>().split_whitespace().collect::<Vec<_>>().join(" "))
+                .filter(|s| !s.is_empty() && s.len() < 80)
+                .unwrap_or_else(|| city_display.to_string());
+            let date_label = card
+                .select(&date_sel)
+                .next()
+                .map(|d| d.text().collect::<String>().split_whitespace().collect::<Vec<_>>().join(" "))
+                .filter(|s| !s.is_empty() && s.len() < 50)
+                .unwrap_or_else(|| "Yaklaşan Etkinlik".to_string());
+
             out.push(EventItem {
-                id: format!("bi-{}", rel.trim_matches('/').replace('/', "-")),
+                id: format!("bi-{}", target_href.trim_matches('/').replace('/', "-")),
                 title,
                 category: cat_id.to_string(),
                 city: city_display.to_string(),
-                venue: city_display.to_string(),
-                date_label: "Yaklaşan Etkinlik".to_string(),
+                venue,
+                date_label,
                 price_label: "Biletler Açık".to_string(),
                 image_url: img,
                 url: full_url,
@@ -157,7 +194,7 @@ async fn fetch_mobilet_events(client: &reqwest::Client, city_display: &str) -> V
     let mut out = Vec::new();
     let mut seen = HashSet::new();
 
-    if let Ok(a_sel) = Selector::parse("a[href^='/tr/event/']") {
+    if let Ok(a_sel) = Selector::parse("[href^='/tr/event/']") {
         let img_sel = Selector::parse("img").unwrap();
         for a in doc.select(&a_sel) {
             let href = a.value().attr("href").unwrap_or("").trim();
@@ -165,9 +202,6 @@ async fn fetch_mobilet_events(client: &reqwest::Client, city_display: &str) -> V
                 continue;
             }
             let full_url = format!("https://mobilet.com{}", href);
-            if !seen.insert(full_url.clone()) {
-                continue;
-            }
             let parts: Vec<String> = a
                 .text()
                 .map(|s| s.trim().to_string())
@@ -191,11 +225,34 @@ async fn fetch_mobilet_events(client: &reqwest::Client, city_display: &str) -> V
             let venue = parts.get(2).cloned().unwrap_or_else(|| "Mobilet".to_string());
             let img = a
                 .select(&img_sel)
-                .next()
-                .and_then(|im| im.value().attr("src").or_else(|| im.value().attr("data-src")))
-                .filter(|s| s.starts_with("http"))
-                .unwrap_or("")
-                .to_string();
+                .filter_map(|im| {
+                    im.value()
+                        .attr("src")
+                        .or_else(|| im.value().attr("data-src"))
+                        .or_else(|| im.value().attr("srcset").and_then(|ss| ss.split_whitespace().next()))
+                })
+                .map(|s| {
+                    let s = s.trim();
+                    if s.starts_with("//") {
+                        format!("https:{}", s)
+                    } else if s.starts_with('/') {
+                        format!("https://mobilet.com{}", s)
+                    } else {
+                        s.to_string()
+                    }
+                })
+                .find(|s| s.starts_with("http") && !s.contains("data:image"))
+                .unwrap_or_default();
+
+            if !seen.insert(full_url.clone()) {
+                // If an earlier duplicate lacked an image, upgrade it with this image
+                if !img.is_empty() {
+                    if let Some(prev) = out.iter_mut().find(|e: &&mut EventItem| e.url == full_url && e.image_url.is_empty()) {
+                        prev.image_url = img;
+                    }
+                }
+                continue;
+            }
 
             let lower = title.to_lowercase();
             let category = if lower.contains("stand") || lower.contains("komedi") {

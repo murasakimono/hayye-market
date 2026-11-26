@@ -558,7 +558,7 @@ pub fn spawn_bridge_server() {
                 } else if method == "GET" && path == "/manifest.webmanifest" {
                     ("200 OK", "application/manifest+json", MANIFEST_JSON.to_string())
                 } else if method == "GET" && path == "/ping" {
-                    ("200 OK", "application/json", r#"{"ok":true,"app":"Hayye Market","version":"4.2.1"}"#.to_string())
+                    ("200 OK", "application/json", r#"{"ok":true,"app":"Hayye Market","version":"4.2.2"}"#.to_string())
                 } else if method == "GET" && path == "/api/events-feed" {
                     let settings = db::open_db().map(|c| db::load_settings(&c)).unwrap_or(crate::models::AlertSettings {
                         discord_webhook: String::new(),
