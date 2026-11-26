@@ -301,6 +301,112 @@ async fn fetch_mobilet_events(client: &reqwest::Client, city_display: &str) -> V
     out
 }
 
+async fn fetch_biletix_events(client: &reqwest::Client, city_display: &str) -> Vec<EventItem> {
+    let Ok(resp) = client.get("https://www.biletix.com/anasayfa/TURKIYE/tr").send().await else {
+        return Vec::new();
+    };
+    let Ok(html) = resp.text().await else {
+        return Vec::new();
+    };
+    let doc = Html::parse_document(&html);
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+
+    if let Ok(a_sel) = Selector::parse("a[href^='/etkinlik/'], a[href^='/etkinlik-grup/']") {
+        let img_sel = Selector::parse("img").unwrap();
+        for a in doc.select(&a_sel) {
+            let href = a.value().attr("href").unwrap_or("").trim();
+            if href.len() < 16 {
+                continue;
+            }
+            let full_url = format!("https://www.biletix.com{}", href);
+            let img = a
+                .select(&img_sel)
+                .filter_map(|im| im.value().attr("data-src").or_else(|| im.value().attr("src")))
+                .map(|s| {
+                    let s = s.trim();
+                    if s.starts_with("//") {
+                        format!("https:{}", s)
+                    } else if s.starts_with('/') {
+                        format!("https://www.biletix.com{}", s)
+                    } else {
+                        s.to_string()
+                    }
+                })
+                .find(|s| s.starts_with("http") && !s.contains("data:image"))
+                .unwrap_or_default();
+
+            let raw_title = a
+                .value()
+                .attr("title")
+                .map(|s| s.trim().to_string())
+                .filter(|s| s.len() >= 3)
+                .or_else(|| {
+                    a.select(&img_sel)
+                        .next()
+                        .and_then(|im| im.value().attr("alt"))
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| s.len() >= 3)
+                })
+                .or_else(|| {
+                    let t = a.text().collect::<String>().split_whitespace().collect::<Vec<_>>().join(" ");
+                    if t.len() >= 4 && t.len() <= 110 { Some(t) } else { None }
+                })
+                .unwrap_or_else(|| {
+                    href.trim_matches('/')
+                        .split('/')
+                        .last()
+                        .unwrap_or("")
+                        .replace('-', " ")
+                });
+
+            if raw_title.len() < 3 || raw_title.len() > 130 {
+                continue;
+            }
+            if !seen.insert(full_url.clone()) {
+                if !img.is_empty() {
+                    if let Some(prev) = out.iter_mut().find(|e: &&mut EventItem| e.url == full_url && e.image_url.is_empty()) {
+                        prev.image_url = img;
+                    }
+                }
+                continue;
+            }
+
+            let lower = format!("{} {}", raw_title, href).to_lowercase();
+            let category = if lower.contains("stand") || lower.contains("komedi") {
+                "standup"
+            } else if lower.contains("tiyatro") || lower.contains("sahne") || lower.contains("oyun") {
+                "theater"
+            } else if lower.contains("fest") {
+                "festival"
+            } else {
+                "concert"
+            };
+
+            out.push(EventItem {
+                id: format!("bx-{}", href.trim_matches('/').replace('/', "-")),
+                title: raw_title,
+                category: category.to_string(),
+                city: city_display.to_string(),
+                venue: "Biletix".to_string(),
+                date_label: "Satışta".to_string(),
+                price_label: "Biletler Açık".to_string(),
+                image_url: img,
+                url: full_url,
+                source: "Biletix".to_string(),
+                matches_radar: false,
+                vote_metehan: String::new(),
+                vote_ilayda: String::new(),
+                ticket_bought: false,
+            });
+            if out.len() >= 30 {
+                break;
+            }
+        }
+    }
+    out
+}
+
 pub async fn fetch_live_events(settings: &AlertSettings) -> Vec<EventItem> {
     let mut headers = reqwest::header::HeaderMap::new();
     headers.insert(
@@ -325,11 +431,12 @@ pub async fn fetch_live_events(settings: &AlertSettings) -> Vec<EventItem> {
     };
     let city_slug = city_to_slug(&city_display);
 
-    let (muzik, tiyatro, standup, mobilet) = tokio::join!(
+    let (muzik, tiyatro, standup, mobilet, biletix) = tokio::join!(
         fetch_biletinial_cat(&client, "muzik", "concert", &city_slug, &city_display),
         fetch_biletinial_cat(&client, "tiyatro", "theater", &city_slug, &city_display),
         fetch_biletinial_cat(&client, "stand-up", "standup", &city_slug, &city_display),
         fetch_mobilet_events(&client, &city_display),
+        fetch_biletix_events(&client, &city_display),
     );
 
     let radar_kws: Vec<String> = settings
@@ -359,6 +466,7 @@ pub async fn fetch_live_events(settings: &AlertSettings) -> Vec<EventItem> {
     let mut all = Vec::new();
     for mut ev in webview_events
         .into_iter()
+        .chain(biletix)
         .chain(muzik)
         .chain(mobilet)
         .chain(standup)

@@ -558,7 +558,7 @@ pub fn spawn_bridge_server() {
                 } else if method == "GET" && path == "/manifest.webmanifest" {
                     ("200 OK", "application/manifest+json", MANIFEST_JSON.to_string())
                 } else if method == "GET" && path == "/ping" {
-                    ("200 OK", "application/json", r#"{"ok":true,"app":"Hayye Market","version":"4.3.2"}"#.to_string())
+                    ("200 OK", "application/json", r#"{"ok":true,"app":"Hayye Market","version":"4.3.3"}"#.to_string())
                 } else if method == "POST" && path == "/api/webview-session-status" {
                     if let Ok(v) = serde_json::from_str::<serde_json::Value>(body_str) {
                         let sid = v["site_id"].as_str().unwrap_or("");
