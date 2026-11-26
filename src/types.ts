@@ -189,6 +189,14 @@ export interface EventItem {
   ticket_bought: boolean;
 }
 
+export interface SiteSessionInfo {
+  id: string;
+  name: string;
+  kind: 'events' | 'shopping' | string;
+  login_url: string;
+  connected_at: string | null;
+}
+
 export interface VaultMetaUpdate {
   product_id: number;
   is_secret_gift?: boolean;

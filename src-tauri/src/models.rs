@@ -187,6 +187,15 @@ pub struct EventItem {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SiteSessionInfo {
+    pub id: String,
+    pub name: String,
+    pub kind: String,
+    pub login_url: String,
+    pub connected_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VaultMetaUpdate {
     pub product_id: i64,
     pub is_secret_gift: Option<bool>,

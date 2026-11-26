@@ -240,7 +240,30 @@ export default function App() {
     let es: EventSource | null = null;
     try {
       es = new EventSource('http://127.0.0.1:47821/api/events');
-      es.onmessage = () => {
+      es.onmessage = (ev) => {
+        const msg = String(ev.data || '');
+        if (msg === 'events_updated') {
+          api.fetchLiveEvents().then(setEvents).catch(() => {});
+          notify('Arka plan bilet taraması yeni etkinlikler yakaladı!');
+          return;
+        }
+        if (msg === 'search_updated') {
+          api.getWebviewSearchResults().then((wv) => {
+            if (wv.length > 0) {
+              setCandidates((prev) => {
+                const urls = new Set(prev.map((x) => x.url));
+                const merged = [...wv.filter((x) => !urls.has(x.url)), ...prev];
+                return merged.sort((a, b) => a.price_try - b.price_try);
+              });
+            }
+          }).catch(() => {});
+          return;
+        }
+        if (msg.startsWith('webview_attention:')) {
+          const site = msg.replace('webview_attention:', '');
+          notify(`⚠ ${site} oturum/doğrulama istiyor — Ayarlar → Bağlı Hesaplar'dan 1 kez giriş yap.`);
+          return;
+        }
         sound.playChime();
         loadAll();
       };
@@ -822,11 +845,30 @@ export default function App() {
                   className="absolute left-0 right-0 top-13 z-50 rounded-3xl glass-card shadow-2xl overflow-hidden max-h-[62vh] overflow-y-auto"
                   style={{ background: 'var(--surface-solid)' }}
                 >
-                  <div className="px-5 py-3 flex items-center justify-between text-xs" style={{ borderBottom: '1px solid var(--border)', color: 'var(--muted)' }}>
+                  <div className="px-5 py-3 flex flex-wrap items-center justify-between gap-2 text-xs" style={{ borderBottom: '1px solid var(--border)', color: 'var(--muted)' }}>
                     <span>Canlı Türkiye Piyasa Sonuçları ({candidates.length})</span>
-                    <button onClick={() => setShowCandidates(false)} className="cursor-pointer">
-                      <X className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {query.trim().length >= 2 && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              const msg = await api.deepSearchViaWebview(query.trim());
+                              notify(msg);
+                            } catch (e) {
+                              notify(String(e));
+                            }
+                          }}
+                          className="px-3 py-1 rounded-full text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+                          style={{ background: 'color-mix(in srgb, var(--accent) 18%, transparent)', color: 'var(--accent)' }}
+                        >
+                          <Zap className="w-3 h-3" /> Derin Tara (Trendyol • Zara • Sahibinden)
+                        </button>
+                      )}
+                      <button onClick={() => setShowCandidates(false)} className="cursor-pointer">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                   {searching ? (
                     <div className="p-8 text-center text-xs" style={{ color: 'var(--muted)' }}>
@@ -1241,15 +1283,33 @@ export default function App() {
                   );
                 })}
               </div>
-              <button
-                onClick={loadEvents}
-                disabled={eventsLoading}
-                className="px-4 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 cursor-pointer shrink-0"
-                style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${eventsLoading ? 'animate-spin' : ''}`} style={{ color: 'var(--accent)' }} />
-                {eventsLoading ? 'Taranıyor...' : 'Canlı Yenile'}
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={async () => {
+                    try {
+                      sound.playClick();
+                      const msg = await api.scanEventsViaWebview();
+                      notify(msg);
+                    } catch (e) {
+                      notify(String(e));
+                    }
+                  }}
+                  className="px-4 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                  style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  Arka Planda Tara (Bubilet • Biletix • Passo • Zorlu)
+                </button>
+                <button
+                  onClick={loadEvents}
+                  disabled={eventsLoading}
+                  className="px-4 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 cursor-pointer shrink-0"
+                  style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${eventsLoading ? 'animate-spin' : ''}`} style={{ color: 'var(--accent)' }} />
+                  {eventsLoading ? 'Taranıyor...' : 'Canlı Yenile'}
+                </button>
+              </div>
             </div>
 
             {eventsLoading && events.length === 0 ? (

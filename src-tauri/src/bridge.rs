@@ -558,7 +558,77 @@ pub fn spawn_bridge_server() {
                 } else if method == "GET" && path == "/manifest.webmanifest" {
                     ("200 OK", "application/manifest+json", MANIFEST_JSON.to_string())
                 } else if method == "GET" && path == "/ping" {
-                    ("200 OK", "application/json", r#"{"ok":true,"app":"Hayye Market","version":"4.2.3"}"#.to_string())
+                    ("200 OK", "application/json", r#"{"ok":true,"app":"Hayye Market","version":"4.3.0"}"#.to_string())
+                } else if method == "POST" && path == "/api/webview-ingest-events" {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(body_str) {
+                        let mut parsed = Vec::new();
+                        if let Some(arr) = v["events"].as_array() {
+                            for it in arr {
+                                parsed.push(crate::models::EventItem {
+                                    id: it["id"].as_str().unwrap_or("").to_string(),
+                                    title: it["title"].as_str().unwrap_or("").to_string(),
+                                    category: it["category"].as_str().unwrap_or("concert").to_string(),
+                                    city: it["city"].as_str().unwrap_or("İstanbul").to_string(),
+                                    venue: it["venue"].as_str().unwrap_or("").to_string(),
+                                    date_label: it["date_label"].as_str().unwrap_or("Satışta").to_string(),
+                                    price_label: it["price_label"].as_str().unwrap_or("Biletler Açık").to_string(),
+                                    image_url: it["image_url"].as_str().unwrap_or("").to_string(),
+                                    url: it["url"].as_str().unwrap_or("").to_string(),
+                                    source: it["source"].as_str().unwrap_or("WebView").to_string(),
+                                    matches_radar: false,
+                                    vote_metehan: String::new(),
+                                    vote_ilayda: String::new(),
+                                    ticket_bought: false,
+                                });
+                            }
+                        }
+                        let count = db::open_db()
+                            .and_then(|c| db::upsert_webview_events(&c, &parsed))
+                            .unwrap_or(0);
+                        if count > 0 {
+                            crate::events::emit("events_updated");
+                        }
+                        ("200 OK", "application/json", format!(r#"{{"ok":true,"count":{}}}"#, count))
+                    } else {
+                        ("400 Bad Request", "application/json", r#"{"error":"Geçersiz JSON"}"#.to_string())
+                    }
+                } else if method == "POST" && path == "/api/webview-ingest-search" {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(body_str) {
+                        let mut parsed = Vec::new();
+                        if let Some(arr) = v["items"].as_array() {
+                            for it in arr {
+                                if let (Some(title), Some(url), Some(price)) = (
+                                    it["title"].as_str(),
+                                    it["url"].as_str(),
+                                    it["price_try"].as_f64(),
+                                ) {
+                                    parsed.push(crate::models::SearchCandidate {
+                                        title: title.to_string(),
+                                        price_try: price,
+                                        store_name: it["store_name"].as_str().unwrap_or("Mağaza").to_string(),
+                                        url: url.to_string(),
+                                        image_url: it["image_url"].as_str().unwrap_or("").to_string(),
+                                        source: it["source"].as_str().unwrap_or("Dahili Oturum").to_string(),
+                                        offer_count: it["offer_count"].as_u64().unwrap_or(1) as u32,
+                                    });
+                                }
+                            }
+                        }
+                        let n = parsed.len();
+                        if n > 0 {
+                            crate::webview_scanner::push_webview_search_results(parsed);
+                            crate::events::emit("search_updated");
+                        }
+                        ("200 OK", "application/json", format!(r#"{{"ok":true,"count":{}}}"#, n))
+                    } else {
+                        ("400 Bad Request", "application/json", r#"{"error":"Geçersiz JSON"}"#.to_string())
+                    }
+                } else if method == "POST" && path == "/api/webview-attention" {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(body_str) {
+                        let src = v["source"].as_str().unwrap_or("Site");
+                        crate::events::emit(&format!("webview_attention:{}", src));
+                    }
+                    ("200 OK", "application/json", r#"{"ok":true}"#.to_string())
                 } else if method == "GET" && path == "/api/events-feed" {
                     let settings = db::open_db().map(|c| db::load_settings(&c)).unwrap_or(crate::models::AlertSettings {
                         discord_webhook: String::new(),

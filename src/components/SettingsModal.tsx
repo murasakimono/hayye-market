@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Bell, Copy, CreditCard, Palette, Play, Puzzle, Send, Smartphone, Square, Wallet, X } from 'lucide-react';
 import { api } from '../api';
 import { THEMES, applyThemeToDom } from '../themes';
-import type { AlertSettings, MobileAccessInfo } from '../types';
+import type { AlertSettings, MobileAccessInfo, SiteSessionInfo } from '../types';
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -35,6 +35,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onToast, 
       'lvbel c5, organize, batuflex, ege!, motive, ati242, sagopa kajmer, gazapizm, uzi, çakal, blok3, era7capone',
   });
   const [mobile, setMobile] = useState<MobileAccessInfo | null>(null);
+  const [sessions, setSessions] = useState<SiteSessionInfo[]>([]);
   const [testing, setTesting] = useState(false);
   const [tunnelBusy, setTunnelBusy] = useState(false);
 
@@ -42,9 +43,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onToast, 
     api.getMobileAccessInfo().then(setMobile).catch(() => {});
   };
 
+  const refreshSessions = () => {
+    api.getSiteSessions().then(setSessions).catch(() => {});
+  };
+
   useEffect(() => {
     api.getAlertSettings().then(setSettings).catch(() => {});
     refreshMobile();
+    refreshSessions();
   }, []);
 
   useEffect(() => {
@@ -280,6 +286,56 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onToast, 
                   style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--ink)' }}
                 />
               </label>
+            </div>
+          </div>
+
+          {/* Connected Accounts / Embedded WebView2 Sessions */}
+          <div className="space-y-2.5 pt-3" style={{ borderTop: '1px solid var(--border)' }}>
+            <div>
+              <div className="text-xs font-semibold" style={{ color: 'var(--accent)' }}>
+                Bağlı Hesaplar & Dahili WebView2 Oturumları (Extension’sız Arka Plan Tarama)
+              </div>
+              <div className="text-[11px] mt-0.5" style={{ color: 'var(--muted)' }}>
+                Bir kez kendi elinle giriş yap → Hayye şifreni asla saklamaz, sadece yerel WebView2 oturumunla arka planda tarama yapar.
+              </div>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {sessions.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const msg = await api.openSiteSession(s.id);
+                      onToast(msg);
+                      refreshSessions();
+                    } catch (e) {
+                      onToast(String(e));
+                    }
+                  }}
+                  className="p-2.5 rounded-2xl text-left flex items-center justify-between gap-2 cursor-pointer transition"
+                  style={{
+                    background: 'var(--surface-2)',
+                    border: s.connected_at ? '1px solid color-mix(in srgb, var(--accent) 45%, transparent)' : '1px solid var(--border)',
+                  }}
+                >
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold truncate">{s.name}</div>
+                    <div className="text-[10px]" style={{ color: s.connected_at ? 'var(--accent)' : 'var(--muted)' }}>
+                      {s.connected_at ? 'Oturum Bağlı ✓' : s.kind === 'events' ? 'Bilet / Etkinlik' : 'Mağaza / 2. El'}
+                    </div>
+                  </div>
+                  <span
+                    className="px-2 py-0.5 rounded-full text-[10px] font-semibold shrink-0"
+                    style={{
+                      background: s.connected_at ? 'color-mix(in srgb, var(--accent) 18%, transparent)' : 'var(--bg)',
+                      color: s.connected_at ? 'var(--accent)' : 'var(--ink)',
+                    }}
+                  >
+                    {s.connected_at ? 'Aç' : 'Giriş'}
+                  </span>
+                </button>
+              ))}
             </div>
           </div>
 

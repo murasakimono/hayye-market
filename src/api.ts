@@ -10,6 +10,7 @@ import type {
   MobileAccessInfo,
   ProductDetail,
   SearchCandidate,
+  SiteSessionInfo,
   TunnelStatus,
   UsedAiAnalysis,
   VaultMetaUpdate,
@@ -87,4 +88,9 @@ export const api = {
   windowToggleMaximize: () => invoke<void>('window_toggle_maximize'),
   windowClose: () => invoke<void>('window_close'),
   windowStartDragging: () => invoke<void>('window_start_dragging'),
+  getSiteSessions: () => invoke<SiteSessionInfo[]>('get_site_sessions'),
+  openSiteSession: (siteId: string) => invoke<string>('open_site_session', { siteId }),
+  scanEventsViaWebview: () => invoke<string>('scan_events_via_webview'),
+  deepSearchViaWebview: (query: string) => invoke<string>('deep_search_via_webview', { query }),
+  getWebviewSearchResults: () => invoke<SearchCandidate[]>('get_webview_search_results'),
 };

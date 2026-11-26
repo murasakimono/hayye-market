@@ -960,6 +960,111 @@ pub fn set_event_vote(conn: &Connection, event_id: &str, who: &str, vote: &str, 
     Ok(())
 }
 
+fn ensure_webview_tables(conn: &Connection) {
+    let _ = conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS webview_events (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            category TEXT NOT NULL,
+            city TEXT NOT NULL,
+            venue TEXT NOT NULL,
+            date_label TEXT NOT NULL,
+            price_label TEXT NOT NULL,
+            image_url TEXT NOT NULL,
+            url TEXT NOT NULL,
+            source TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS webview_sessions (
+            site_id TEXT PRIMARY KEY,
+            connected_at TEXT NOT NULL
+        );",
+    );
+}
+
+pub fn mark_site_connected(conn: &Connection, site_id: &str) -> Result<(), String> {
+    ensure_webview_tables(conn);
+    conn.execute(
+        "INSERT INTO webview_sessions (site_id, connected_at) VALUES (?1, ?2) ON CONFLICT(site_id) DO UPDATE SET connected_at = excluded.connected_at",
+        params![site_id, Utc::now().to_rfc3339()],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+pub fn list_connected_sites(conn: &Connection) -> Result<std::collections::HashMap<String, String>, String> {
+    ensure_webview_tables(conn);
+    let mut stmt = conn
+        .prepare("SELECT site_id, connected_at FROM webview_sessions")
+        .map_err(|e| e.to_string())?;
+    let mut map = std::collections::HashMap::new();
+    let rows = stmt
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+        .map_err(|e| e.to_string())?;
+    for r in rows.flatten() {
+        map.insert(r.0, r.1);
+    }
+    Ok(map)
+}
+
+pub fn upsert_webview_events(conn: &Connection, events: &[crate::models::EventItem]) -> Result<usize, String> {
+    ensure_webview_tables(conn);
+    let now = Utc::now().to_rfc3339();
+    let mut n = 0usize;
+    for ev in events {
+        if ev.title.trim().len() < 3 || !ev.url.starts_with("http") {
+            continue;
+        }
+        let _ = conn.execute(
+            "INSERT INTO webview_events (id, title, category, city, venue, date_label, price_label, image_url, url, source, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+             ON CONFLICT(id) DO UPDATE SET
+               title = excluded.title,
+               venue = excluded.venue,
+               date_label = excluded.date_label,
+               price_label = excluded.price_label,
+               image_url = CASE WHEN excluded.image_url != '' THEN excluded.image_url ELSE webview_events.image_url END,
+               updated_at = excluded.updated_at",
+            params![
+                ev.id, ev.title, ev.category, ev.city, ev.venue, ev.date_label,
+                ev.price_label, ev.image_url, ev.url, ev.source, now
+            ],
+        );
+        n += 1;
+    }
+    Ok(n)
+}
+
+pub fn load_webview_events(conn: &Connection) -> Result<Vec<crate::models::EventItem>, String> {
+    ensure_webview_tables(conn);
+    let mut stmt = conn
+        .prepare("SELECT id, title, category, city, venue, date_label, price_label, image_url, url, source FROM webview_events ORDER BY updated_at DESC LIMIT 120")
+        .map_err(|e| e.to_string())?;
+    let items = stmt
+        .query_map([], |r| {
+            Ok(crate::models::EventItem {
+                id: r.get(0)?,
+                title: r.get(1)?,
+                category: r.get(2)?,
+                city: r.get(3)?,
+                venue: r.get(4)?,
+                date_label: r.get(5)?,
+                price_label: r.get(6)?,
+                image_url: r.get(7)?,
+                url: r.get(8)?,
+                source: r.get(9)?,
+                matches_radar: false,
+                vote_metehan: String::new(),
+                vote_ilayda: String::new(),
+                ticket_bought: false,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .filter_map(Result::ok)
+        .collect();
+    Ok(items)
+}
+
 pub fn save_push_subscription(conn: &Connection, endpoint: &str, p256dh: &str, auth: &str, who: &str) -> Result<(), String> {
     conn.execute(
         "INSERT INTO push_subscriptions (endpoint, p256dh, auth, who, created_at) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(endpoint) DO UPDATE SET p256dh=excluded.p256dh, auth=excluded.auth, who=excluded.who",

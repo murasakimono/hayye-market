@@ -302,9 +302,19 @@ async fn fetch_mobilet_events(client: &reqwest::Client, city_display: &str) -> V
 }
 
 pub async fn fetch_live_events(settings: &AlertSettings) -> Vec<EventItem> {
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+        reqwest::header::ACCEPT,
+        reqwest::header::HeaderValue::from_static("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"),
+    );
+    headers.insert(
+        reqwest::header::ACCEPT_LANGUAGE,
+        reqwest::header::HeaderValue::from_static("tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"),
+    );
     let client = reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
-        .timeout(Duration::from_secs(10))
+        .default_headers(headers)
+        .timeout(Duration::from_secs(14))
         .build()
         .unwrap_or_default();
 
@@ -335,15 +345,25 @@ pub async fn fetch_live_events(settings: &AlertSettings) -> Vec<EventItem> {
         .filter(|s| s.len() >= 2)
         .collect();
 
-    // Load saved votes from SQLite
+    // Load saved votes + cached WebView2 events (Bubilet, Biletix, Passo, Zorlu PSM, Paribu) from SQLite
     let vote_map: HashMap<String, (String, String, bool)> = db::open_db()
         .ok()
         .and_then(|c| db::load_event_votes(&c).ok())
         .unwrap_or_default();
+    let webview_events: Vec<EventItem> = db::open_db()
+        .ok()
+        .and_then(|c| db::load_webview_events(&c).ok())
+        .unwrap_or_default();
 
     let mut seen = HashSet::new();
     let mut all = Vec::new();
-    for mut ev in muzik.into_iter().chain(mobilet).chain(standup).chain(tiyatro) {
+    for mut ev in webview_events
+        .into_iter()
+        .chain(muzik)
+        .chain(mobilet)
+        .chain(standup)
+        .chain(tiyatro)
+    {
         if !seen.insert(ev.url.clone()) {
             continue;
         }
