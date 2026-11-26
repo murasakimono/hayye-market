@@ -1,59 +1,73 @@
 <div align="center">
-  <img src="public/hayye-icon.png" width="104" height="104" alt="Hayye Market Logo" style="border-radius:24px" />
+  <img src="public/hayye-icon.png" width="116" height="116" alt="Hayye Market 3D Monogram" />
   <h1>HAYYE MARKET</h1>
-  <p><strong>Editorial Lookbook Dark — Evrensel Fiyat, Stok, Moda/Kozmetik &amp; 2. El İlan İstihbaratı</strong></p>
+  <p><strong>Türkiye'nin Evrensel Fiyat, Stok, Moda/Kozmetik, 2. El &amp; Keşfet İstihbarat İşletim Sistemi</strong></p>
   <p>
-    <img src="https://img.shields.io/badge/version-4.0.0-10B981?style=flat-square" alt="Version 4.0.0" />
-    <img src="https://img.shields.io/badge/stack-Tauri%20v2%20%2B%20Rust%20%2B%20Framer%20Motion-090A0C?style=flat-square" alt="Tauri v2 + Rust" />
-    <img src="https://img.shields.io/badge/platform-Windows%20%2B%20Brave%20SidePanel%20%2B%20iOS%20PWA-3B82F6?style=flat-square" alt="Windows + Brave + iOS PWA" />
+    <img src="https://img.shields.io/badge/version-4.1.0-10B981?style=for-the-badge" alt="Version 4.1.0" />
+    <img src="https://img.shields.io/badge/Tauri%20v2%20%2B%20Rust-080A0D?style=for-the-badge&logo=rust&logoColor=white" alt="Tauri v2 + Rust" />
+    <img src="https://img.shields.io/badge/65%2B%20TR%20Mağaza-3B82F6?style=for-the-badge" alt="65+ Mağaza" />
+    <img src="https://img.shields.io/badge/iOS%20%26%20iPadOS%20PWA-11141A?style=for-the-badge&logo=apple&logoColor=white" alt="iOS PWA" />
   </p>
+</div>
+
+<br />
+
+<div align="center">
+  <img src="docs/screenshots/v4-home.png" alt="Hayye Market v4.1.0 — Obsidian Aurora Editorial UI" width="100%" />
+  <br />
+  <sub><em>Hayye Market v4.1.0 — Canlı Animated Mesh Atmosferi, Liquid Glass Yüzeyler, Yüzen Cam Dock &amp; 3D Stüdyo İkonu</em></sub>
 </div>
 
 ---
 
-## Neden Hayye Market?
+## Ekosistem Mimarisi
 
-Sahte "bindirim sonrası indirim" etiketleri, 30 saniyede tükenen Inditex/streetwear bedenleri, şişirilmiş 2. el ilanları ve onlarca sekmede dağılan favori listeleri için tek bir koyu piyasa terminali.
+Tek yerel çekirdek (**Rust + gömülü SQLite**), üç senkron yüzey (**Windows Masaüstü**, **65+ Mağazalı Brave Yan Panel Eklentisi**, **iPhone & iPad Safari PWA**):
 
-- **Sahte İndirim Dedektörü & Enflasyonsuz (TL ↔ USD) Grafik:** Ürünün fiyat geçmişini hem TL hem canlı USD kuru üzerinden analiz eder; **GERÇEK DİP**, **GERÇEK İNDİRİM** veya **ŞİŞİRİLMİŞ** kararını net şekilde verir.
-- **Moda, Streetwear & Kozmetik Motoru:**
-  - `ikas` (`__NEXT_DATA__`), `Shopify` (`/products/*.json`) ve `JSON-LD` mağazalarını doğrudan tarar (**Flaw Wear, HypeTR, 36clo, Boyner, Nike TR, Beymen, Gratis, Rossmann, Akakçe, Amazon TR, Vatan**).
-  - **Beden Bazlı Stok Alarmı:** Sadece kendi bedenlerini (`S`, `M`, `L`, `42` vb.) işaretlersin; o beden stoğa girdiği an bildirim gelir.
-  - **1-Tık Sniper Hızlı Alım (`⚡ Hızlı Alım`):** Shopify ve desteklenen mağazalarda doğrudan seçili bedenin sepet/ödeme linkini açar.
-  - **Kozmetik Birim Fiyat Dedektörü:** Parfüm, serum ve bakım ürünlerinde `ml` / `gr` miktarını otomatik çıkarıp **`₺ / 10 ml`** gerçek maliyetini hesaplar.
-- **2. El vs Sıfır Piyasa Bandı & Güvenilirlik Skoru:** Sahibinden, Dolap ve Letgo ilanlarını sıfır en ucuz fiyatla kıyaslar; Param Güvende, fatura/kutu, fotoğraf sayısı ve fiyat anomalisi kırılımıyla **%0–100 Güvenilirlik Yüzdesi** üretir, tek tıkla pazarlık mesajı kopyalar.
-- **29 Mağazalı Brave Yardımcı Eklentisi (`extension/`):** Akamai/WAF korumalı mağazalarda (**Zara, Bershka, Stradivarius, Pull&Bear, Massimo Dutti, Oysho, Sephora, Watsons, Trendyol, Hepsiburada, Sahibinden, Dolap** vb.) kendi oturumun üzerinden **1-tık Ürün/Favori/Sepet Toplu Aktarım** ve DOM beden taraması yapar.
-- **iPhone & iPad Safari Uygulaması (PWA — App Store Gerektirmez):** Uygulama yerel ağda (`:47821/app`) ve yerleşik **Cloudflare Zero Trust / Worker Sabit Tünel** üzerinden iPhone/iPad Ana Ekranına sabit uygulama olarak eklenir; iOS Kestirmeler Paylaşım Menüsü (`POST /ios-share`) destekler.
-- **Anlık Telefon Bildirimleri:** Discord Webhook, Telegram Bot ve ücretsiz `ntfy.sh` push desteği.
-- **Toplam Kurtarılan Para Sayacı & Klasörlü Sepet Toplamı:** Gerçek indirimlerden ettiğin toplam tasarrufu ve tüm alışveriş listelerinin sıfır / 2. el karma maliyetini tek ekranda izler.
+```mermaid
+flowchart LR
+    PC["Hayye Market Masaüstü (Tauri v2 + Rust + SQLite)"]
+    DAEMON["Otonom Tarayıcı (SINT 07-09 + Cuma 22:00 Gaming Gecesi)"]
+    EXT["Brave Eklentisi v4.0 (Side Panel + Visual Selector + 2. El Farkı)"]
+    CF["Cloudflare Sabit Tünel (HTTPS)"]
+    IOS["iPhone & iPad PWA (SSE Canlı Senkron + Keşfet + Swipe)"]
+
+    DAEMON --> PC
+    PC <-->|"Yerel Köprü :47821 + SSE"| EXT
+    PC <-->|"Otomatik Sabit Tünel"| CF
+    CF <-->|"5G / Wi-Fi"| IOS
+```
+
+---
+
+## Öne Çıkan Yetenekler
+
+| Modül | Ne Yapar? |
+| :--- | :--- |
+| **Keşfet (Discover) & Fiyat Aralıklı Arama** | 120+ canlı doğrulanmış fiyat düşüşünü tarar; **Günün En Büyük 5 Düşüşü** vitrini, **Sezon & Kampanya Takvimi** (Inditex, İncehesap Gaming Gecesi Cuma 22:00, Sephora/Gratis, Prime Day), **Anti-Çöp Susturma** ve **`Min ₺ – Max ₺` fiyat aralıklı canlı arama** (örn. *1000–1500 ₺ kulaklık*). |
+| **Sahte İndirim Dedektörü & TL / USD / Gram Altın** | Fiyat geçmişini TL, canlı USD ve **Gram Altın** bazında ölçer; bindirim sonrası sahte indirimi anında yakalar. Sezon öncesi tek tık **Fiyat Dondur (Snapshot)**. |
+| **5 Canlı Atmosferik Tema + Framer Motion** | `Obsidian Aurora`, `Noir Velvet`, `Atelier Ivory` (aydınlık editoryal), `Arctic Frost` (visionOS buzlu cam), `Midnight Botanical` — Masaüstü, Brave Yan Panel ve iOS PWA tek merkezden senkron. Prosedürel **WebAudio** mikro sesler, **Apple Music adaptif ürün rengi** ve **`Ctrl+K` Komut Paleti**. |
+| **Moda, Inditex & Kozmetik Zekâsı** | `ikas`, `Shopify` (Sniper 1-tık sepet linki) ve `JSON-LD` ayrıştırıcı; **Beden Bazlı Stok Alarmı** (`SINT 07:00–09:00` sık tarama), **Inditex Dalga Tahmincisi**, **10 ml / 10 gr birim fiyat**, **Batch Code** ve **Parfüm Muadil (Dupe)** kartı. |
+| **Yurt Dışı Yolcu Beraberi (Glocalzone & Grabr)** | Türkiye'de 30€ kargo muafiyetinin kalkmasına uygun **Kendi Seyahatin (Tax-Free -%10)** ve **Glocalzone / Grabr** (ayarlanabilir yolcu ödülü + hizmet bedeli) net kıyaslama + tek tık `Glocalzone`, `Grabr`, `Amazon.de`, `Idealo.de` araması. |
+| **2. El Piyasa & Lokal Ollama Kusur Dedektörü** | Sahibinden, Dolap, Letgo, Gardrops ilanlarında %0–100 Güvenilirlik skoru, Brave'de **Yeni İlan Farkı (`✦ YENİ` / `↓ DÜŞTÜ`)** ve PC'deki lokal **Ollama** ile gizli kusur & adil pazarlık analizi. |
+| **Ortak Pano, Moodboard & Gizli Hediye Kasası** | İki kişilik **Al / Bekle / Pas** oylaması (SSE ile anında senkron + iOS Swipe-to-Vote), aylık bütçe çubuğu, görsel **Moodboard**, **14 Gün İade Koruması**, **Kargo + 2 Yıl Garanti Kasası**, **Dijital Dolap (Cost-Per-Wear) & 2. Elde Sat** ve diğer profilde görünmeyen **Gizli Sürpriz Hediye** kasası. |
+| **Her Zaman Üstte Mini Acrylic HUD** | Çerçevesiz, şeffaf, sürüklenebilir mini masaüstü fiyat & hızlı alım kapsülü (`Ctrl+K` ile aç/kapa). |
 
 ---
 
 ## Kurulum
 
-### 1. Masaüstü Uygulaması (Windows)
-[Releases](https://github.com/murasakimono/hayye-market/releases/latest) sayfasından **`Hayye Market_1.1.1_x64-setup.exe`** dosyasını indirip kur.
+### 1. Windows Masaüstü Uygulaması
+[Releases](https://github.com/murasakimono/hayye-market/releases/latest) sayfasından **`Hayye Market_4.1.0_x64-setup.exe`** dosyasını indirip kur.
 
-### 2. Brave / Chromium Yardımcı Eklentisi
-1. Tarayıcıda `brave://extensions` (veya `chrome://extensions`) adresini aç.
-2. Sağ üstten **Geliştirici modu**nu aç.
-3. **Paketlenmemiş öğe yükle** diyerek bu repodaki [`extension/`](./extension) klasörünü seç.
+### 2. 65+ Mağazalı Brave / Chromium Yan Panel Eklentisi
+1. `brave://extensions` (veya `chrome://extensions`) adresini aç ve **Geliştirici modu**nu etkinleştir.
+2. **Paketlenmemiş öğe yükle** diyerek [`extension/`](./extension) klasörünü seç.
+3. Eklenti ikonuna bastığında sağdan kalıcı **Hayye Market Yan Paneli** açılır; destek listesinde olmayan siteler için **🎯 Görsel Fiyat Seçici (Visual Selector)** kullanabilirsin.
 
-### 3. iPhone & iPad Uygulaması (Safari PWA)
-- **Ev Wi-Fi:** Hayye Market -> Ayarlar içindeki Ev Wi-Fi adresini (`http://<PC-IP>:47821/app`) Safari'de aç -> **Paylaş -> Ana Ekrana Ekle**.
-- **Ev Dışı Sabit Erişim (Cloudflare Tunnel):** Ayarlar -> Cloudflare bölümüne Zero Trust Tunnel Token'ını (veya [`cloudflare-worker/worker.js`](./cloudflare-worker/worker.js) adres + anahtarını) bir kez gir. Uygulama her açıldığında tüneli otomatik bağlar ve iPhone'daki adresin hiç değişmez.
-
----
-
-## Teknoloji Yığını
-
-| Katman | Teknoloji |
-| :--- | :--- |
-| Masaüstü Çekirdek | Tauri v2 + Rust (`tokio`, `reqwest`, `scraper`, `rusqlite`) |
-| Veritabanı | Gömülü SQLite (sıfır harici sunucu, %100 yerel veri) |
-| Arayüz | React 19 + TypeScript + Tailwind CSS v4 (StockX × Teenage Engineering estetiği) |
-| Tarayıcı Köprüsü | Yerel HTTP Köprüsü (`:47821`) + Manifest V3 Companion Extension |
-| Mobil Erişim | Yerleşik iOS Safari PWA + `cloudflared` Sabit Tünel Yöneticisi |
+### 3. iPhone & iPad Uygulaması (App Store Gerektirmez)
+- **Ev Wi-Fi:** Uygulama → Ayarlar içindeki Ev Wi-Fi adresini (`http://<PC-IP>:47821/app`) Safari'de aç → **Paylaş → Ana Ekrana Ekle**.
+- **Ev Dışı Sabit Erişim (5G):** Ayarlar'a kendi Cloudflare Worker ([`cloudflare-worker/worker.js`](./cloudflare-worker/worker.js)) veya Zero Trust Tunnel bilgini bir kez gir; uygulama açıldığında tünel otomatik bağlanır.
 
 ---
 

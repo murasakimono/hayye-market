@@ -501,7 +501,7 @@ pub fn spawn_bridge_server() {
                 } else if method == "GET" && path == "/manifest.webmanifest" {
                     ("200 OK", "application/manifest+json", MANIFEST_JSON.to_string())
                 } else if method == "GET" && path == "/ping" {
-                    ("200 OK", "application/json", r#"{"ok":true,"app":"Hayye Market","version":"4.0.0"}"#.to_string())
+                    ("200 OK", "application/json", r#"{"ok":true,"app":"Hayye Market","version":"4.1.0"}"#.to_string())
                 } else if method == "POST" && path == "/api/push/subscribe" {
                     if let Ok(v) = serde_json::from_str::<serde_json::Value>(body_str) {
                         let ep = v["endpoint"].as_str().unwrap_or("");

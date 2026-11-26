@@ -4,7 +4,6 @@ import {
   Bell,
   Bot,
   Calendar,
-  Camera,
   Check,
   Clock,
   Compass,
@@ -17,7 +16,6 @@ import {
   Heart,
   Layers,
   LayoutGrid,
-  Monitor,
   Package,
   Palette,
   RefreshCw,
@@ -31,8 +29,6 @@ import {
   TrendingDown,
   Truck,
   Users,
-  Volume2,
-  VolumeX,
   Wallet,
   X,
   Zap,
@@ -40,6 +36,7 @@ import {
 import { api } from './api';
 import { extractAmbientColor } from './colorExtract';
 import { CommandPalette, PaletteIcons } from './components/CommandPalette';
+import { OdometerPrice } from './components/OdometerPrice';
 import { PriceChart } from './components/PriceChart';
 import { SettingsModal } from './components/SettingsModal';
 import {
@@ -125,6 +122,13 @@ export default function App() {
   const [archiveDeals, setArchiveDeals] = useState<DiscoverArchiveItem[]>([]);
   const [discoverLoading, setDiscoverLoading] = useState(false);
   const [discoverCat, setDiscoverCat] = useState<DiscoverCategory>('all');
+  const [discoverQuery, setDiscoverQuery] = useState('');
+  const [discoverMin, setDiscoverMin] = useState('');
+  const [discoverMax, setDiscoverMax] = useState('');
+  const [modalTab, setModalTab] = useState<'overview' | 'vault' | 'used'>('overview');
+  const [travelRewardPct, setTravelRewardPct] = useState(12);
+  const [travelServicePct, setTravelServicePct] = useState(7);
+  const [travelTaxFree, setTravelTaxFree] = useState(false);
   const [activeTab, setActiveTab] = useState<DockTab>('gallery');
   const [showSecretOnly, setShowSecretOnly] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
@@ -317,11 +321,67 @@ export default function App() {
   }, [activeTab]);
 
   const filteredDiscover = useMemo(() => {
-    if (discoverCat === 'all') return discoverItems;
-    if (discoverCat === 'personal') return discoverItems.filter((d) => d.matches_personal);
-    if (discoverCat === 'flash') return discoverItems.filter((d) => d.is_flash_error || d.drop_pct >= 25);
-    return discoverItems.filter((d) => d.category === discoverCat);
-  }, [discoverItems, discoverCat]);
+    const q = discoverQuery.trim().toLowerCase();
+    const minV = discoverMin.trim() ? Number(discoverMin) : null;
+    const maxV = discoverMax.trim() ? Number(discoverMax) : null;
+    return discoverItems.filter((d) => {
+      if (discoverCat === 'personal' && !d.matches_personal) return false;
+      if (discoverCat === 'flash' && !(d.is_flash_error || d.drop_pct >= 25)) return false;
+      if (
+        discoverCat !== 'all' &&
+        discoverCat !== 'personal' &&
+        discoverCat !== 'flash' &&
+        d.category !== discoverCat
+      ) {
+        return false;
+      }
+      if (q && !(d.title + ' ' + d.brand).toLowerCase().includes(q)) return false;
+      if (minV !== null && Number.isFinite(minV) && d.price_try < minV) return false;
+      if (maxV !== null && Number.isFinite(maxV) && d.price_try > maxV) return false;
+      return true;
+    });
+  }, [discoverItems, discoverCat, discoverQuery, discoverMin, discoverMax]);
+
+  const handleDiscoverRangeSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const q = discoverQuery.trim();
+    if (!q) return;
+    setDiscoverLoading(true);
+    sound.playClick();
+    try {
+      const live = await api.searchLiveTr(q);
+      const minV = discoverMin.trim() ? Number(discoverMin) : 0;
+      const maxV = discoverMax.trim() ? Number(discoverMax) : 99_999_999;
+      const mapped: DiscoverItem[] = live
+        .filter((c) => c.price_try >= minV && c.price_try <= maxV)
+        .map((c, i) => ({
+          id: `live-${Date.now()}-${i}`,
+          title: c.title,
+          brand: c.store_name,
+          category: 'all',
+          price_try: c.price_try,
+          drop_pct: 12,
+          heat_score: 78,
+          image_url: c.image_url,
+          url: c.url,
+          source: `${c.source} (Canlı Arama)`,
+          is_flash_error: false,
+          matches_personal: true,
+          offer_count: c.offer_count || 1,
+        }));
+      if (mapped.length > 0) {
+        setDiscoverItems((prev) => [...mapped, ...prev.filter((x) => !x.id.startsWith('live-'))]);
+        setDiscoverCat('all');
+        notify(`${mapped.length} canlı ürün fiyat bandında bulundu.`);
+      } else {
+        notify('Bu fiyat aralığında canlı sonuç bulunamadı.');
+      }
+    } catch (err) {
+      notify(String(err));
+    } finally {
+      setDiscoverLoading(false);
+    }
+  };
 
   const top5Drops = useMemo(
     () => [...discoverItems].sort((a, b) => b.drop_pct - a.drop_pct).slice(0, 5),
@@ -791,60 +851,20 @@ export default function App() {
 
             <button
               onClick={() => {
-                sound.playToggle(!showSecretOnly);
-                setShowSecretOnly((v) => !v);
-                setActiveTab('gallery');
+                sound.playClick();
+                setShowPalette(true);
               }}
-              title="Gizli Sürpriz Hediye Klasörü (İlayda profilinde tamamen gizli)"
-              className="p-2 rounded-full cursor-pointer transition"
+              title="Komut Paleti: Mini HUD, Ses, Fiyat Dondur, Gizli Hediye (Ctrl+K)"
+              className="px-3 py-2 rounded-full text-xs font-medium flex items-center gap-1.5 cursor-pointer transition"
               style={{
                 background: showSecretOnly ? 'var(--accent)' : 'var(--surface-2)',
-                color: showSecretOnly ? 'var(--accent-ink)' : 'var(--muted)',
+                color: showSecretOnly ? 'var(--accent-ink)' : 'var(--ink)',
                 border: '1px solid var(--border)',
               }}
             >
-              <Gift className="w-3.5 h-3.5" />
-            </button>
-
-            <button
-              onClick={async () => {
-                sound.playClick();
-                try {
-                  const open = await api.toggleMiniHud();
-                  notify(open ? 'Mini Acrylic HUD açıldı.' : 'Mini HUD kapatıldı.');
-                } catch (e) {
-                  notify(String(e));
-                }
-              }}
-              title="Her Zaman Üstte Şeffaf Mini Fiyat Kapsülü (HUD)"
-              className="p-2 rounded-full cursor-pointer transition"
-              style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--muted)' }}
-            >
-              <Monitor className="w-3.5 h-3.5" />
-            </button>
-
-            <button
-              onClick={() => {
-                const next = !soundOn;
-                setSoundOn(next);
-                sound.enabled = next;
-                if (next) sound.playToggle(true);
-              }}
-              title="Taktiksel UI Mikro Sesleri Aç/Kapa"
-              className="p-2 rounded-full cursor-pointer transition"
-              style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--muted)' }}
-            >
-              {soundOn ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
-            </button>
-
-            <button
-              onClick={handleSnapshotAll}
-              title="Sezon indirimi öncesi tüm fiyatları dondur"
-              className="px-3 py-2 rounded-full text-xs font-medium flex items-center gap-1.5 cursor-pointer transition"
-              style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
-            >
-              <Camera className="w-3.5 h-3.5" style={{ color: 'var(--accent)' }} />
-              <span className="hidden xl:inline">Dondur</span>
+              <Sparkles className="w-3.5 h-3.5" style={{ color: showSecretOnly ? 'var(--accent-ink)' : 'var(--accent)' }} />
+              <span className="hidden lg:inline">{showSecretOnly ? 'Gizli Hediye' : 'Araçlar'}</span>
+              <span className="text-[10px] font-mono-num opacity-65">⌘K</span>
             </button>
 
             <button
@@ -1047,6 +1067,61 @@ export default function App() {
         {/* Editorial Magazine Discover View */}
         {activeTab === 'discover' ? (
           <div className="space-y-6">
+            {/* Price Range + Keyword Live Filter & Market Search */}
+            <form
+              onSubmit={handleDiscoverRangeSearch}
+              className="p-3 rounded-3xl glass-card flex flex-wrap items-center gap-2.5"
+            >
+              <div className="relative flex-1 min-w-[200px]">
+                <Search className="w-3.5 h-3.5 absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--muted)' }} />
+                <input
+                  value={discoverQuery}
+                  onChange={(e) => setDiscoverQuery(e.target.value)}
+                  placeholder="Keşfette filtrele veya canlı ara (örn. kulaklık, parfüm, airfryer)..."
+                  className="w-full rounded-full pl-9 pr-3 py-2 text-xs focus:outline-none"
+                  style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--ink)' }}
+                />
+              </div>
+              <input
+                type="number"
+                value={discoverMin}
+                onChange={(e) => setDiscoverMin(e.target.value)}
+                placeholder="Min ₺ (örn. 1000)"
+                className="w-32 rounded-full px-3.5 py-2 text-xs font-mono-num focus:outline-none"
+                style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--ink)' }}
+              />
+              <input
+                type="number"
+                value={discoverMax}
+                onChange={(e) => setDiscoverMax(e.target.value)}
+                placeholder="Max ₺ (örn. 1500)"
+                className="w-32 rounded-full px-3.5 py-2 text-xs font-mono-num focus:outline-none"
+                style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--ink)' }}
+              />
+              <button
+                type="submit"
+                disabled={discoverLoading || !discoverQuery.trim()}
+                className="px-4 py-2 rounded-full text-xs font-bold cursor-pointer disabled:opacity-45 shrink-0"
+                style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}
+              >
+                Bu Aralıkta Canlı Ara
+              </button>
+              {(discoverQuery || discoverMin || discoverMax) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDiscoverQuery('');
+                    setDiscoverMin('');
+                    setDiscoverMax('');
+                  }}
+                  className="px-3 py-2 rounded-full text-xs cursor-pointer"
+                  style={{ background: 'var(--surface-2)', color: 'var(--muted)' }}
+                >
+                  Temizle
+                </button>
+              )}
+            </form>
+
             {/* Discover Category Pills & Refresh */}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
@@ -1799,15 +1874,51 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Right Column */}
-                <div className="lg:col-span-7 space-y-5">
+                {/* Right Column: Clean 3-Tab Layout */}
+                <div className="lg:col-span-7 space-y-4">
+                  {/* Modal Right Sub-Tabs */}
+                  <div className="flex items-center gap-1.5 p-1 rounded-full w-fit" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+                    {(
+                      [
+                        { id: 'overview', label: 'Fiyat, Grafik & Mağaza' },
+                        { id: 'vault', label: 'Kasa, Dolap & Yurt Dışı' },
+                        { id: 'used', label: `2. El & AI (${selected.used_listings.length})` },
+                      ] as const
+                    ).map((t) => (
+                      <button
+                        key={t.id}
+                        onClick={() => {
+                          sound.playClick();
+                          setModalTab(t.id);
+                        }}
+                        className="px-3.5 py-1.5 rounded-full text-xs font-semibold cursor-pointer transition"
+                        style={{
+                          background: modalTab === t.id ? 'var(--ink)' : 'transparent',
+                          color: modalTab === t.id ? 'var(--bg)' : 'var(--muted)',
+                        }}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {modalTab === 'overview' && (
+                    <div className="space-y-4">
                   <div className="p-5 rounded-2xl flex flex-wrap items-center justify-between gap-4" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
                     <div>
                       <div className="text-[11px] uppercase tracking-wider" style={{ color: 'var(--muted)' }}>
                         En Ucuz Sıfır Piyasa
                       </div>
                       <div className="font-mono-num text-3xl font-bold mt-1">
-                        {selected.best_new_try > 0 ? fmtPrice(selected.best_new_try) : '—'}
+                        {selected.best_new_try > 0 ? (
+                          currency === 'TRY' ? (
+                            <OdometerPrice value={selected.best_new_try} currency="TRY" />
+                          ) : (
+                            fmtPrice(selected.best_new_try)
+                          )
+                        ) : (
+                          '—'
+                        )}
                       </div>
                       <div className="text-xs mt-1.5" style={{ color: 'var(--muted)' }}>
                         {selected.discount_verdict.explanation}
@@ -1921,7 +2032,41 @@ export default function App() {
                     </div>
                   )}
 
-                  {/* Vault: Cargo, 2Y Warranty, Digital Closet CPW, Batch/Dupe, Secret Gift & Foreign Travel */}
+                  {/* Retail Offers (in Overview Tab) */}
+                  <div className="space-y-2">
+                    <div className="text-xs font-semibold">Mağaza Teklifleri ({selected.offers.length})</div>
+                    {selected.offers.map((o) => (
+                      <div
+                        key={o.id}
+                        className="px-4 py-3 rounded-2xl flex items-center justify-between gap-3"
+                        style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+                      >
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold">{o.store_name}</div>
+                          <div className="text-[11px]" style={{ color: 'var(--muted)' }}>
+                            {o.seller_name} • Güven %{o.trust_score}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className="font-mono-num text-sm font-bold" style={{ color: 'var(--accent)' }}>
+                            {fmtPrice(o.price_try + o.shipping_try)}
+                          </span>
+                          <button
+                            onClick={() => api.openExternal(o.url)}
+                            className="p-2 rounded-full cursor-pointer"
+                            style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                    </div>
+                  )}
+
+                  {/* Vault Tab: Cargo, 2Y Warranty, Digital Closet CPW, Batch/Dupe, Secret Gift & Glocalzone/Grabr Travel */}
+                  {modalTab === 'vault' && (
                   <div className="p-4 rounded-2xl space-y-3.5" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="text-xs font-semibold flex items-center gap-1.5">
@@ -2066,20 +2211,96 @@ export default function App() {
                       </button>
                     )}
 
-                    {/* Foreign Travel vs TR Comparison (30 EUR exemption removed!) */}
-                    {Number(vaultDraft.foreign_eur_price) > 0 && selected.best_new_try > 0 && (
-                      <div className="p-2.5 rounded-xl text-[11px] flex items-start gap-2" style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
-                        <Globe className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: 'var(--accent-2)' }} />
-                        <div>
-                          <strong>Yolcu Beraberi (Avrupa):</strong>{' '}
-                          {fmtTry(Number(vaultDraft.foreign_eur_price) * rates.eur_try)} (TR farkı:{' '}
-                          <span style={{ color: selected.best_new_try > Number(vaultDraft.foreign_eur_price) * rates.eur_try ? 'var(--accent)' : 'var(--danger)' }}>
-                            {fmtTry(selected.best_new_try - Number(vaultDraft.foreign_eur_price) * rates.eur_try)}
-                          </span>
-                          ). <span style={{ color: 'var(--muted)' }}>Not: TR’de 30€ kargo muafiyeti kalktığı için sadece yolcu beraberi avantajlıdır.</span>
-                        </div>
+                    {/* Glocalzone / Grabr / Amazon.de / Idealo.de Travel-Carry Calculator */}
+                    <div className="p-3.5 rounded-xl space-y-2.5 text-[11px]" style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-semibold flex items-center gap-1.5" style={{ color: 'var(--accent-2)' }}>
+                          <Globe className="w-3.5 h-3.5" />
+                          Yurt Dışı Yolcu Beraberi (Glocalzone / Grabr / Seyahat)
+                        </span>
+                        <label className="flex items-center gap-1 cursor-pointer" style={{ color: 'var(--muted)' }}>
+                          <input
+                            type="checkbox"
+                            checked={travelTaxFree}
+                            onChange={(e) => setTravelTaxFree(e.target.checked)}
+                          />
+                          Tax-Free (-%10)
+                        </label>
                       </div>
-                    )}
+
+                      <div className="flex flex-wrap items-center gap-2 text-[10px]" style={{ color: 'var(--muted)' }}>
+                        <span>Yolcu Ödülü %:</span>
+                        <input
+                          type="number"
+                          value={travelRewardPct}
+                          onChange={(e) => setTravelRewardPct(Number(e.target.value) || 0)}
+                          className="w-12 rounded-lg px-1.5 py-0.5 font-mono-num"
+                          style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--ink)' }}
+                        />
+                        <span>Platform Hizmet %:</span>
+                        <input
+                          type="number"
+                          value={travelServicePct}
+                          onChange={(e) => setTravelServicePct(Number(e.target.value) || 0)}
+                          className="w-12 rounded-lg px-1.5 py-0.5 font-mono-num"
+                          style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--ink)' }}
+                        />
+                      </div>
+
+                      {Number(vaultDraft.foreign_eur_price) > 0 && selected.best_new_try > 0 && (() => {
+                        const eur = Number(vaultDraft.foreign_eur_price);
+                        const selfEur = travelTaxFree ? eur * 0.9 : eur;
+                        const selfTry = selfEur * rates.eur_try;
+                        const glocalTry = eur * (1 + (travelRewardPct + travelServicePct) / 100) * rates.eur_try;
+                        const isPhone = /iphone|galaxy s|pixel|telefon|xiaomi 1/i.test(selected.title);
+                        return (
+                          <div className="space-y-1.5 pt-1">
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="p-2 rounded-lg" style={{ background: 'var(--surface-2)' }}>
+                                <div className="text-[10px]" style={{ color: 'var(--muted)' }}>Kendi Seyahatinle</div>
+                                <div className="font-mono-num font-bold text-xs">{fmtTry(selfTry)}</div>
+                                <div className="text-[10px]" style={{ color: selected.best_new_try > selfTry ? 'var(--accent)' : 'var(--danger)' }}>
+                                  TR farkı: {fmtTry(selected.best_new_try - selfTry)}
+                                </div>
+                              </div>
+                              <div className="p-2 rounded-lg" style={{ background: 'var(--surface-2)' }}>
+                                <div className="text-[10px]" style={{ color: 'var(--muted)' }}>Glocalzone / Grabr Tahmini</div>
+                                <div className="font-mono-num font-bold text-xs">{fmtTry(glocalTry)}</div>
+                                <div className="text-[10px]" style={{ color: selected.best_new_try > glocalTry ? 'var(--accent)' : 'var(--danger)' }}>
+                                  TR farkı: {fmtTry(selected.best_new_try - glocalTry)}
+                                </div>
+                              </div>
+                            </div>
+                            {isPhone && (
+                              <div className="text-[10px]" style={{ color: 'var(--danger)' }}>
+                                ⚠ Telefon/IMEI Uyarısı: Yurt dışı telefonlarda pasaport IMEI kayıt harcını toplam maliyete eklemeyi unutma.
+                              </div>
+                            )}
+                            <div className="text-[10px]" style={{ color: 'var(--muted)' }}>
+                              Not: Türkiye’de 30€ kargo muafiyeti kalktığı için sadece yolcu beraberi / Glocalzone / Grabr mantıklıdır.
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {[
+                          { label: 'Glocalzone ↗', url: `https://www.glocalzone.com/tr/search?q=${encodeURIComponent(selected.title.split(' ').slice(0, 4).join(' '))}` },
+                          { label: 'Grabr ↗', url: `https://grabr.io/en/shop?q=${encodeURIComponent(selected.title.split(' ').slice(0, 4).join(' '))}` },
+                          { label: 'Amazon.de ↗', url: `https://www.amazon.de/s?k=${encodeURIComponent(selected.title.split(' ').slice(0, 4).join(' '))}` },
+                          { label: 'Idealo.de ↗', url: `https://www.idealo.de/preisvergleich/MainSearchProductCategory.html?q=${encodeURIComponent(selected.title.split(' ').slice(0, 4).join(' '))}` },
+                        ].map((lnk) => (
+                          <button
+                            key={lnk.label}
+                            onClick={() => api.openExternal(lnk.url)}
+                            className="px-2.5 py-1 rounded-full text-[10px] font-semibold cursor-pointer"
+                            style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--ink)' }}
+                          >
+                            {lnk.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
 
                     {/* Perfume Dupe Finder */}
                     {(() => {
@@ -2093,39 +2314,10 @@ export default function App() {
                       );
                     })()}
                   </div>
+                  )}
 
-                  {/* Retail Offers */}
-                  <div className="space-y-2">
-                    <div className="text-xs font-semibold">Mağaza Teklifleri ({selected.offers.length})</div>
-                    {selected.offers.map((o) => (
-                      <div
-                        key={o.id}
-                        className="px-4 py-3 rounded-2xl flex items-center justify-between gap-3"
-                        style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
-                      >
-                        <div className="min-w-0">
-                          <div className="text-xs font-semibold">{o.store_name}</div>
-                          <div className="text-[11px]" style={{ color: 'var(--muted)' }}>
-                            {o.seller_name} • Güven %{o.trust_score}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3 shrink-0">
-                          <span className="font-mono-num text-sm font-bold" style={{ color: 'var(--accent)' }}>
-                            {fmtPrice(o.price_try + o.shipping_try)}
-                          </span>
-                          <button
-                            onClick={() => api.openExternal(o.url)}
-                            className="p-2 rounded-full cursor-pointer"
-                            style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}
-                          >
-                            <ExternalLink className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* 2nd Hand + Local Ollama Defect Detector */}
+                  {/* 2nd Hand + Local Ollama Defect Detector Tab */}
+                  {modalTab === 'used' && (
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-semibold" style={{ color: 'var(--accent-2)' }}>
@@ -2246,6 +2438,7 @@ export default function App() {
                       );
                     })}
                   </div>
+                  )}
                 </div>
               </div>
             </motion.div>
