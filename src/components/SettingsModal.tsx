@@ -26,6 +26,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onToast, 
     discover_keywords: 'nike, adidas, zara, dyson, ninja, parfüm, rtx, macbook, apple, philips, sephora',
     discover_muted: 'bebek bezi, deterjan, kedi maması, köpek maması, oto lastik, tuvalet kağıdı',
     discover_alerts_enabled: true,
+    sound_enabled: true,
+    auto_scan_enabled: true,
   });
   const [mobile, setMobile] = useState<MobileAccessInfo | null>(null);
   const [testing, setTesting] = useState(false);
@@ -398,7 +400,45 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onToast, 
             </div>
           </div>
 
-          {/* Extension v3 */}
+          {/* Autonomous Scanner, Sound & iOS Shortcuts Wizard */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 text-xs" style={{ borderTop: '1px solid var(--border)' }}>
+            <label className="p-3 rounded-2xl flex items-center justify-between gap-2 cursor-pointer" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+              <div>
+                <div className="font-semibold">Otonom Arka Plan Tarayıcı</div>
+                <div className="text-[10px]" style={{ color: 'var(--muted)' }}>SINT 07–09, Cuma 22:00 Gaming Gecesi & 45dk tarama</div>
+              </div>
+              <input
+                type="checkbox"
+                checked={settings.auto_scan_enabled}
+                onChange={(e) => setSettings({ ...settings, auto_scan_enabled: e.target.checked })}
+              />
+            </label>
+            <label className="p-3 rounded-2xl flex items-center justify-between gap-2 cursor-pointer" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+              <div>
+                <div className="font-semibold">Taktiksel UI Mikro Sesler</div>
+                <div className="text-[10px]" style={{ color: 'var(--muted)' }}>Prosedürel WebAudio tık, toggle & dip chime</div>
+              </div>
+              <input
+                type="checkbox"
+                checked={settings.sound_enabled}
+                onChange={(e) => setSettings({ ...settings, sound_enabled: e.target.checked })}
+              />
+            </label>
+          </div>
+
+          <div className="p-3.5 rounded-2xl space-y-1.5 text-[11px]" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+            <div className="font-semibold" style={{ color: 'var(--accent)' }}>
+              iOS &quot;Paylaş → Hayye&apos;ye At&quot; Kestirme Sihirbazı (30 sn)
+            </div>
+            <div style={{ color: 'var(--muted)' }}>
+              iPhone <strong>Kestirmeler</strong> uygulamasında yeni kestirme aç → Paylaşım Sayfasında Göster (URL) → <strong>URL İçeriğini Al</strong>:
+              <code className="block mt-1 font-mono-num select-all" style={{ color: 'var(--ink)' }}>
+                POST {(settings.cloudflare_tunnel_url || 'https://hayye-market.kami-metehan.workers.dev').replace(/\/$/, '')}/ios-share  |  JSON: &#123;&quot;url&quot;: Kestirme Girişi&#125;
+              </code>
+            </div>
+          </div>
+
+          {/* Extension v4 */}
           <div className="pt-3 space-y-1.5" style={{ borderTop: '1px solid var(--border)' }}>
             <div className="flex items-center gap-2 text-xs font-semibold" style={{ color: 'var(--accent-2)' }}>
               <Puzzle className="w-4 h-4" />

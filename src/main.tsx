@@ -1,7 +1,10 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { MiniHud } from './components/MiniHud';
 import './index.css';
+
+const isHudMode = new URLSearchParams(window.location.search).get('hud') === '1';
 
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -40,7 +43,7 @@ class ErrorBoundary extends React.Component<
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ErrorBoundary>
-      <App />
+      {isHudMode ? <MiniHud /> : <App />}
     </ErrorBoundary>
   </React.StrictMode>
 );

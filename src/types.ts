@@ -129,6 +129,15 @@ export interface ProductDetail {
   purchased_at: string | null;
   snapshot_price_try: number | null;
   snapshot_at: string | null;
+  is_secret_gift: boolean;
+  cargo_company: string;
+  cargo_tracking_no: string;
+  warranty_months: number;
+  receipt_note: string;
+  wear_count: number;
+  batch_code: string;
+  pao_months: number;
+  foreign_eur_price: number | null;
 }
 
 export interface SearchCandidate {
@@ -156,6 +165,31 @@ export interface AlertSettings {
   discover_keywords: string;
   discover_muted: string;
   discover_alerts_enabled: boolean;
+  sound_enabled: boolean;
+  auto_scan_enabled: boolean;
+}
+
+export interface VaultMetaUpdate {
+  product_id: number;
+  is_secret_gift?: boolean;
+  cargo_company?: string;
+  cargo_tracking_no?: string;
+  warranty_months?: number;
+  receipt_note?: string;
+  batch_code?: string;
+  pao_months?: number;
+  foreign_eur_price?: number;
+}
+
+export interface DiscoverArchiveItem {
+  deal_id: string;
+  title: string;
+  brand: string;
+  category: string;
+  price_try: number;
+  drop_pct: number;
+  url: string;
+  seen_at: string;
 }
 
 export interface DiscoverItem {

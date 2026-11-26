@@ -232,6 +232,19 @@ pub async fn fetch_discover_feed(settings: &AlertSettings) -> Vec<DiscoverItem> 
             .then_with(|| b.drop_pct.partial_cmp(&a.drop_pct).unwrap_or(std::cmp::Ordering::Equal))
     });
 
+    // Record top drops into discover_archive ("Kaçırılan En İyi Fırsatlar")
+    if let Ok(conn) = db::open_db() {
+        let now_iso = chrono::Utc::now().to_rfc3339();
+        for d in all.iter().filter(|x| x.drop_pct >= 18.0).take(10) {
+            let _ = conn.execute(
+                "INSERT INTO discover_archive (deal_id, title, brand, category, price_try, drop_pct, url, seen_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                 ON CONFLICT(deal_id) DO UPDATE SET price_try=excluded.price_try, drop_pct=MAX(drop_pct, excluded.drop_pct), seen_at=excluded.seen_at",
+                params![d.id, d.title, d.brand, d.category, d.price_try, d.drop_pct, d.url, now_iso],
+            );
+        }
+    }
+
     // Dispatch extreme drop / personal radar alerts (deduplicated in SQLite)
     if settings.discover_alerts_enabled {
         let alerts_to_send: Vec<DiscoverItem> = {

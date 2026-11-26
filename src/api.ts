@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type {
   AddManualUsedRequest,
   AlertSettings,
+  DiscoverArchiveItem,
   DiscoverItem,
   FolderItem,
   MarketRates,
@@ -10,6 +11,7 @@ import type {
   SearchCandidate,
   TunnelStatus,
   UsedAiAnalysis,
+  VaultMetaUpdate,
 } from './types';
 
 export const api = {
@@ -39,6 +41,11 @@ export const api = {
     invoke<void>('set_tracked_sizes', { productId, trackedSizes }),
   setProductVote: (productId: number, who: 'metehan' | 'ilayda', vote: string, note?: string) =>
     invoke<void>('set_product_vote', { productId, who, vote, note: note ?? null }),
+  updateVaultMeta: (update: VaultMetaUpdate) => invoke<void>('update_vault_meta', { update }),
+  incrementWearCount: (productId: number, delta: number) =>
+    invoke<number>('increment_wear_count', { productId, delta }),
+  getDiscoverArchive: () => invoke<DiscoverArchiveItem[]>('get_discover_archive'),
+  toggleMiniHud: () => invoke<boolean>('toggle_mini_hud'),
   markPurchased: (productId: number, priceTry: number | null) =>
     invoke<void>('mark_purchased', { productId, priceTry }),
   freezePriceSnapshots: () => invoke<number>('freeze_price_snapshots'),

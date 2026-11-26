@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import {
   Bell,
   Bot,
+  Calendar,
   Camera,
   Check,
   Clock,
@@ -11,29 +12,46 @@ import {
   ExternalLink,
   Flame,
   FolderPlus,
+  Gift,
+  Globe,
   Heart,
   Layers,
   LayoutGrid,
+  Monitor,
   Package,
   Palette,
   RefreshCw,
   Search,
   Settings,
   ShieldCheck,
+  Shirt,
   ShoppingBag,
   Sparkles,
   Trash2,
   TrendingDown,
+  Truck,
   Users,
+  Volume2,
+  VolumeX,
   Wallet,
   X,
   Zap,
 } from 'lucide-react';
 import { api } from './api';
+import { extractAmbientColor } from './colorExtract';
+import { CommandPalette, PaletteIcons } from './components/CommandPalette';
 import { PriceChart } from './components/PriceChart';
 import { SettingsModal } from './components/SettingsModal';
+import {
+  FREE_SHIPPING_THRESHOLDS,
+  findPerfumeDupe,
+  getCargoTrackUrl,
+  getUpcomingCampaigns,
+} from './data/campaigns';
+import { sound } from './sound';
 import { THEMES, applyThemeToDom } from './themes';
 import {
+  type DiscoverArchiveItem,
   type DiscoverItem,
   type FolderItem,
   type MarketRates,
@@ -104,9 +122,23 @@ export default function App() {
   const [folders, setFolders] = useState<FolderItem[]>([]);
   const [products, setProducts] = useState<ProductDetail[]>([]);
   const [discoverItems, setDiscoverItems] = useState<DiscoverItem[]>([]);
+  const [archiveDeals, setArchiveDeals] = useState<DiscoverArchiveItem[]>([]);
   const [discoverLoading, setDiscoverLoading] = useState(false);
   const [discoverCat, setDiscoverCat] = useState<DiscoverCategory>('all');
   const [activeTab, setActiveTab] = useState<DockTab>('gallery');
+  const [showSecretOnly, setShowSecretOnly] = useState(false);
+  const [showPalette, setShowPalette] = useState(false);
+  const [soundOn, setSoundOn] = useState(true);
+  const [modalAmbientGlow, setModalAmbientGlow] = useState('rgba(16, 185, 129, 0.22)');
+  const [vaultDraft, setVaultDraft] = useState({
+    cargo_company: 'HepsiJet',
+    cargo_tracking_no: '',
+    warranty_months: 24,
+    receipt_note: '',
+    batch_code: '',
+    pao_months: 24,
+    foreign_eur_price: '',
+  });
   const [activeFolder, setActiveFolder] = useState<number | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [currency, setCurrency] = useState<CurrencyMode>('TRY');
@@ -177,6 +209,11 @@ export default function App() {
       }
       if (st?.monthly_budget_try) setMonthlyBudget(st.monthly_budget_try);
       if (st?.user_cards) setUserCards(st.user_cards);
+      if (typeof st?.sound_enabled === 'boolean') {
+        setSoundOn(st.sound_enabled);
+        sound.enabled = st.sound_enabled;
+      }
+      api.getDiscoverArchive().then(setArchiveDeals).catch(() => {});
     } catch {
       applyThemeToDom(activeTheme);
     }
@@ -185,21 +222,35 @@ export default function App() {
   useEffect(() => {
     api.getMarketRates().then(setRates).catch(() => {});
     loadAll();
-    const timer = setInterval(loadAll, 15000);
+    const timer = setInterval(loadAll, 20000);
+    // Live SSE real-time sync (instant update when İlayda votes/adds from iPhone)
+    let es: EventSource | null = null;
+    try {
+      es = new EventSource('http://127.0.0.1:47821/api/events');
+      es.onmessage = () => {
+        sound.playChime();
+        loadAll();
+      };
+    } catch {
+      // Outside bridge
+    }
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        searchRef.current?.focus();
+        sound.playClick();
+        setShowPalette((v) => !v);
       }
       if (e.key === 'Escape') {
         setShowCandidates(false);
         setShowThemeMenu(false);
+        setShowPalette(false);
         setSelectedId(null);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => {
       clearInterval(timer);
+      es?.close();
       window.removeEventListener('keydown', onKey);
     };
   }, []);
@@ -213,6 +264,16 @@ export default function App() {
     if (selected) {
       setTargetInput(selected.target_price_try ? String(Math.round(selected.target_price_try)) : '');
       setNoteInput(selected.shared_note || '');
+      setVaultDraft({
+        cargo_company: selected.cargo_company || 'HepsiJet',
+        cargo_tracking_no: selected.cargo_tracking_no || '',
+        warranty_months: selected.warranty_months || 24,
+        receipt_note: selected.receipt_note || '',
+        batch_code: selected.batch_code || '',
+        pao_months: selected.pao_months || 24,
+        foreign_eur_price: selected.foreign_eur_price ? String(selected.foreign_eur_price) : '',
+      });
+      extractAmbientColor(selected.image_url, selected.title).then(setModalAmbientGlow);
     }
   }, [selected?.id]);
 
@@ -291,9 +352,33 @@ export default function App() {
   };
 
   const folderProducts = useMemo(() => {
-    if (activeFolder === null) return products;
-    return products.filter((p) => p.folder_id === activeFolder);
-  }, [products, activeFolder]);
+    const base = showSecretOnly ? products.filter((p) => p.is_secret_gift) : products;
+    if (activeFolder === null) return base;
+    return base.filter((p) => p.folder_id === activeFolder);
+  }, [products, activeFolder, showSecretOnly]);
+
+  // Free shipping bundle opportunity detector (same store >= 2 items)
+  const shippingBundles = useMemo(() => {
+    const byStore = new Map<string, { count: number; total: number }>();
+    for (const p of products) {
+      const st = p.offers[0]?.store_name;
+      if (!st || p.best_new_try <= 0) continue;
+      const cur = byStore.get(st) || { count: 0, total: 0 };
+      cur.count += 1;
+      cur.total += p.best_new_try;
+      byStore.set(st, cur);
+    }
+    return Array.from(byStore.entries())
+      .filter(([, v]) => v.count >= 2)
+      .map(([store, v]) => {
+        const thresh = FREE_SHIPPING_THRESHOLDS[store] ?? 1000;
+        const missing = Math.max(0, thresh - v.total);
+        return { store, count: v.count, total: v.total, thresh, missing };
+      })
+      .slice(0, 3);
+  }, [products]);
+
+  const upcomingCampaigns = useMemo(() => getUpcomingCampaigns(), []);
 
   const radarProducts = useMemo(() => {
     return products.filter((p) => {
@@ -705,6 +790,54 @@ export default function App() {
             </AnimatePresence>
 
             <button
+              onClick={() => {
+                sound.playToggle(!showSecretOnly);
+                setShowSecretOnly((v) => !v);
+                setActiveTab('gallery');
+              }}
+              title="Gizli Sürpriz Hediye Klasörü (İlayda profilinde tamamen gizli)"
+              className="p-2 rounded-full cursor-pointer transition"
+              style={{
+                background: showSecretOnly ? 'var(--accent)' : 'var(--surface-2)',
+                color: showSecretOnly ? 'var(--accent-ink)' : 'var(--muted)',
+                border: '1px solid var(--border)',
+              }}
+            >
+              <Gift className="w-3.5 h-3.5" />
+            </button>
+
+            <button
+              onClick={async () => {
+                sound.playClick();
+                try {
+                  const open = await api.toggleMiniHud();
+                  notify(open ? 'Mini Acrylic HUD açıldı.' : 'Mini HUD kapatıldı.');
+                } catch (e) {
+                  notify(String(e));
+                }
+              }}
+              title="Her Zaman Üstte Şeffaf Mini Fiyat Kapsülü (HUD)"
+              className="p-2 rounded-full cursor-pointer transition"
+              style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--muted)' }}
+            >
+              <Monitor className="w-3.5 h-3.5" />
+            </button>
+
+            <button
+              onClick={() => {
+                const next = !soundOn;
+                setSoundOn(next);
+                sound.enabled = next;
+                if (next) sound.playToggle(true);
+              }}
+              title="Taktiksel UI Mikro Sesleri Aç/Kapa"
+              className="p-2 rounded-full cursor-pointer transition"
+              style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--muted)' }}
+            >
+              {soundOn ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+            </button>
+
+            <button
               onClick={handleSnapshotAll}
               title="Sezon indirimi öncesi tüm fiyatları dondur"
               className="px-3 py-2 rounded-full text-xs font-medium flex items-center gap-1.5 cursor-pointer transition"
@@ -832,6 +965,26 @@ export default function App() {
           )}
         </div>
 
+        {/* Free Shipping Bundle Opportunity Strip */}
+        {activeTab === 'gallery' && shippingBundles.length > 0 && (
+          <div className="mb-5 flex flex-wrap gap-2">
+            {shippingBundles.map((b) => (
+              <div
+                key={b.store}
+                className="px-3.5 py-2 rounded-2xl glass-card text-xs flex items-center gap-2"
+              >
+                <Truck className="w-3.5 h-3.5" style={{ color: 'var(--accent)' }} />
+                <span>
+                  <strong>{b.store}</strong> ({b.count} ürün • {fmtTry(b.total)}):{' '}
+                  {b.missing === 0
+                    ? 'Ücretsiz kargo eşiğini geçtin ✓'
+                    : `Ücretsiz kargo için ${fmtTry(b.missing)} kaldı`}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Shared Monthly Budget Bar */}
         {activeTab === 'shared' && (
           <div className="mb-6 p-4 rounded-3xl glass-card flex flex-wrap items-center justify-between gap-4">
@@ -935,6 +1088,51 @@ export default function App() {
                 {discoverLoading ? 'Taranıyor...' : 'Canlı Yenile'}
               </button>
             </div>
+
+            {/* Season & Campaign Calendar Strip */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
+              {upcomingCampaigns.map((ev) => (
+                <div
+                  key={ev.id}
+                  className="p-3 rounded-2xl glass-card space-y-1"
+                >
+                  <div className="flex items-center justify-between text-[10px]">
+                    <span className="font-semibold flex items-center gap-1" style={{ color: 'var(--accent)' }}>
+                      <Calendar className="w-3 h-3" /> {ev.badge}
+                    </span>
+                    <span className="font-mono-num font-bold" style={{ color: 'var(--ink)' }}>
+                      {ev.daysLeft === 0 ? 'BUGÜN!' : `${ev.daysLeft} gün`}
+                    </span>
+                  </div>
+                  <div className="text-xs font-semibold leading-snug">{ev.title}</div>
+                  <div className="text-[10px] leading-relaxed" style={{ color: 'var(--muted)' }}>
+                    {ev.advice}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Archive of Missed Big Drops */}
+            {archiveDeals.length > 0 && discoverCat === 'all' && (
+              <div className="p-3.5 rounded-2xl glass-card flex items-center gap-3 overflow-x-auto no-scrollbar">
+                <span className="text-[11px] font-semibold shrink-0" style={{ color: 'var(--muted)' }}>
+                  Son Kaydedilen Büyük Düşüşler:
+                </span>
+                {archiveDeals.slice(0, 6).map((a) => (
+                  <button
+                    key={a.deal_id}
+                    onClick={() => api.openExternal(a.url)}
+                    className="px-3 py-1 rounded-full text-[11px] shrink-0 cursor-pointer flex items-center gap-1.5"
+                    style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+                  >
+                    <span className="font-mono-num font-bold" style={{ color: 'var(--accent)' }}>
+                      -%{Math.round(a.drop_pct)}
+                    </span>
+                    <span className="max-w-[160px] truncate">{a.title}</span>
+                  </button>
+                ))}
+              </div>
+            )}
 
             {/* Top 5 Biggest Drops Showcase Strip */}
             {discoverCat === 'all' && top5Drops.length > 0 && (
@@ -1413,7 +1611,9 @@ export default function App() {
               exit={{ opacity: 0, scale: 0.95, y: 14 }}
               transition={{ type: 'spring', stiffness: 360, damping: 30 }}
               className="w-full max-w-5xl max-h-[90vh] glass-card rounded-3xl overflow-hidden shadow-2xl flex flex-col"
-              style={{ background: 'var(--surface-solid)' }}
+              style={{
+                background: `radial-gradient(circle at 18% 0%, ${modalAmbientGlow}, transparent 52%), var(--surface-solid)`,
+              }}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="px-6 py-4 flex items-center justify-between gap-4" style={{ borderBottom: '1px solid var(--border)' }}>
@@ -1721,6 +1921,179 @@ export default function App() {
                     </div>
                   )}
 
+                  {/* Vault: Cargo, 2Y Warranty, Digital Closet CPW, Batch/Dupe, Secret Gift & Foreign Travel */}
+                  <div className="p-4 rounded-2xl space-y-3.5" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-xs font-semibold flex items-center gap-1.5">
+                        <Truck className="w-3.5 h-3.5" style={{ color: 'var(--accent)' }} />
+                        Kargo, Garanti Kasası, Dolap (CPW) & Yurt Dışı
+                      </span>
+                      <button
+                        onClick={async () => {
+                          const next = !selected.is_secret_gift;
+                          await api.updateVaultMeta({ product_id: selected.id, is_secret_gift: next });
+                          sound.playToggle(next);
+                          await loadAll();
+                          notify(next ? 'Gizli Sürpriz Hediye kasasına alındı (İlayda göremez).' : 'Gizli hediye işareti kaldırıldı.');
+                        }}
+                        className="px-2.5 py-1 rounded-full text-[10px] font-semibold flex items-center gap-1 cursor-pointer"
+                        style={{
+                          background: selected.is_secret_gift ? 'var(--accent)' : 'var(--bg)',
+                          color: selected.is_secret_gift ? 'var(--accent-ink)' : 'var(--muted)',
+                          border: '1px solid var(--border)',
+                        }}
+                      >
+                        <Gift className="w-3 h-3" />
+                        {selected.is_secret_gift ? 'Gizli Hediye ✓' : 'Gizli Hediye Yap'}
+                      </button>
+                    </div>
+
+                    {/* Digital Closet CPW & 2nd-Hand Resale Assistant */}
+                    <div className="p-3 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs" style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
+                      <div className="flex items-center gap-2">
+                        <Shirt className="w-4 h-4" style={{ color: 'var(--accent)' }} />
+                        <div>
+                          <div className="font-semibold">
+                            Dijital Dolap: {selected.wear_count} kez kullanıldı
+                          </div>
+                          <div className="text-[10px] font-mono-num" style={{ color: 'var(--muted)' }}>
+                            {selected.wear_count > 0 && selected.best_new_try > 0
+                              ? `Kullanım başı maliyet: ${fmtTry((selected.purchased_price_try || selected.best_new_try) / selected.wear_count)}`
+                              : 'Giyim/kullanım sayacını artırdıkça gerçek maliyet düşer'}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={async () => {
+                            await api.incrementWearCount(selected.id, 1);
+                            sound.playClick();
+                            await loadAll();
+                          }}
+                          className="px-2.5 py-1 rounded-full text-[11px] font-bold cursor-pointer"
+                          style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}
+                        >
+                          +1 Kullanım
+                        </button>
+                        <button
+                          onClick={() => {
+                            const fair = Math.round(((selected.best_new_try || 1000) * 0.68) / 50) * 50;
+                            navigator.clipboard.writeText(
+                              `${selected.title} — Temiz kullanıldı (${selected.wear_count} kullanım). Güncel sıfırı ${fmtTry(selected.best_new_try)}. Adil fiyat: ${fmtTry(fair)}, Param Güvende ile kargolanır.`
+                            );
+                            sound.playChime();
+                            notify(`2. Elde Sat ilan metni kopyalandı (Öneri: ${fmtTry(fair)}).`);
+                          }}
+                          className="px-2.5 py-1 rounded-full text-[11px] font-semibold cursor-pointer"
+                          style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+                        >
+                          2. Elde Sat ↗
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Cargo + 2Y Warranty + Batch + Foreign EUR inputs */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px]">
+                      <select
+                        value={vaultDraft.cargo_company}
+                        onChange={(e) => setVaultDraft({ ...vaultDraft, cargo_company: e.target.value })}
+                        className="rounded-xl px-2.5 py-1.5"
+                        style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--ink)' }}
+                      >
+                        {['HepsiJet', 'Yurtiçi Kargo', 'Trendyol Express', 'Kolay Gelsin', 'Aras Kargo', 'MNG Kargo'].map((c) => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                      <input
+                        placeholder="Kargo Takip No"
+                        value={vaultDraft.cargo_tracking_no}
+                        onChange={(e) => setVaultDraft({ ...vaultDraft, cargo_tracking_no: e.target.value })}
+                        className="rounded-xl px-2.5 py-1.5 font-mono-num"
+                        style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--ink)' }}
+                      />
+                      <input
+                        placeholder="Fatura / Garanti Notu"
+                        value={vaultDraft.receipt_note}
+                        onChange={(e) => setVaultDraft({ ...vaultDraft, receipt_note: e.target.value })}
+                        className="rounded-xl px-2.5 py-1.5"
+                        style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--ink)' }}
+                      />
+                      <input
+                        placeholder="Kozmetik Batch Code"
+                        value={vaultDraft.batch_code}
+                        onChange={(e) => setVaultDraft({ ...vaultDraft, batch_code: e.target.value })}
+                        className="rounded-xl px-2.5 py-1.5 font-mono-num"
+                        style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--ink)' }}
+                      />
+                      <input
+                        type="number"
+                        placeholder="Avrupa Fiyatı (€)"
+                        value={vaultDraft.foreign_eur_price}
+                        onChange={(e) => setVaultDraft({ ...vaultDraft, foreign_eur_price: e.target.value })}
+                        className="rounded-xl px-2.5 py-1.5 font-mono-num"
+                        style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--ink)' }}
+                      />
+                      <button
+                        onClick={async () => {
+                          await api.updateVaultMeta({
+                            product_id: selected.id,
+                            cargo_company: vaultDraft.cargo_company,
+                            cargo_tracking_no: vaultDraft.cargo_tracking_no,
+                            warranty_months: vaultDraft.warranty_months,
+                            receipt_note: vaultDraft.receipt_note,
+                            batch_code: vaultDraft.batch_code,
+                            pao_months: vaultDraft.pao_months,
+                            foreign_eur_price: vaultDraft.foreign_eur_price ? Number(vaultDraft.foreign_eur_price) : 0,
+                          });
+                          sound.playChime();
+                          await loadAll();
+                          notify('Kasa bilgileri kaydedildi.');
+                        }}
+                        className="rounded-xl px-3 py-1.5 font-semibold cursor-pointer"
+                        style={{ background: 'var(--ink)', color: 'var(--bg)' }}
+                      >
+                        Kasayı Kaydet
+                      </button>
+                    </div>
+
+                    {vaultDraft.cargo_tracking_no && (
+                      <button
+                        onClick={() => api.openExternal(getCargoTrackUrl(vaultDraft.cargo_company, vaultDraft.cargo_tracking_no))}
+                        className="text-[11px] font-semibold hover:underline cursor-pointer"
+                        style={{ color: 'var(--accent)' }}
+                      >
+                        📦 {vaultDraft.cargo_company} Canlı Kargo Takip ({vaultDraft.cargo_tracking_no}) ↗
+                      </button>
+                    )}
+
+                    {/* Foreign Travel vs TR Comparison (30 EUR exemption removed!) */}
+                    {Number(vaultDraft.foreign_eur_price) > 0 && selected.best_new_try > 0 && (
+                      <div className="p-2.5 rounded-xl text-[11px] flex items-start gap-2" style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}>
+                        <Globe className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: 'var(--accent-2)' }} />
+                        <div>
+                          <strong>Yolcu Beraberi (Avrupa):</strong>{' '}
+                          {fmtTry(Number(vaultDraft.foreign_eur_price) * rates.eur_try)} (TR farkı:{' '}
+                          <span style={{ color: selected.best_new_try > Number(vaultDraft.foreign_eur_price) * rates.eur_try ? 'var(--accent)' : 'var(--danger)' }}>
+                            {fmtTry(selected.best_new_try - Number(vaultDraft.foreign_eur_price) * rates.eur_try)}
+                          </span>
+                          ). <span style={{ color: 'var(--muted)' }}>Not: TR’de 30€ kargo muafiyeti kalktığı için sadece yolcu beraberi avantajlıdır.</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Perfume Dupe Finder */}
+                    {(() => {
+                      const dupe = findPerfumeDupe(selected.title);
+                      if (!dupe) return null;
+                      return (
+                        <div className="p-2.5 rounded-xl text-[11px]" style={{ background: 'color-mix(in srgb, var(--accent) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--accent) 28%, transparent)' }}>
+                          <strong style={{ color: 'var(--accent)' }}>✨ Parfüm Muadili (Dupe):</strong> {dupe.dupe} —{' '}
+                          <span style={{ color: 'var(--muted)' }}>{dupe.note}</span>
+                        </div>
+                      );
+                    })()}
+                  </div>
+
                   {/* Retail Offers */}
                   <div className="space-y-2">
                     <div className="text-xs font-semibold">Mağaza Teklifleri ({selected.offers.length})</div>
@@ -1887,6 +2260,26 @@ export default function App() {
           onThemeChange={(t) => setActiveTheme(t)}
         />
       )}
+
+      <AnimatePresence>
+        {showPalette && (
+          <CommandPalette
+            onClose={() => setShowPalette(false)}
+            actions={[
+              { id: 'disc', label: 'Keşfet — Gerçek İndirim Akışına Git', hint: 'Canlı 120+ düşüş', icon: <PaletteIcons.Compass className="w-4 h-4" />, run: () => setActiveTab('discover') },
+              { id: 'gal', label: 'Koleksiyon & Lookbook', icon: <PaletteIcons.LayoutGrid className="w-4 h-4" />, run: () => setActiveTab('gallery') },
+              { id: 'shr', label: 'Metehan × İlayda Ortak Pano', icon: <PaletteIcons.Users className="w-4 h-4" />, run: () => setActiveTab('shared') },
+              { id: 'mb', label: 'Kombin & Ev Moodboard', icon: <PaletteIcons.Layers className="w-4 h-4" />, run: () => setActiveTab('moodboard') },
+              { id: 'ord', label: 'Siparişler & 14 Gün İade Koruması', icon: <PaletteIcons.Package className="w-4 h-4" />, run: () => setActiveTab('orders') },
+              { id: 'sec', label: showSecretOnly ? 'Gizli Hediye Filtresini Kapat' : 'Gizli Sürpriz Hediye Kasasını Aç', hint: 'İlayda göremez', icon: <PaletteIcons.Gift className="w-4 h-4" />, run: () => { setShowSecretOnly((v) => !v); setActiveTab('gallery'); } },
+              { id: 'hud', label: 'Mini Acrylic HUD Penceresini Aç / Kapat', hint: 'Her zaman üstte', icon: <PaletteIcons.Monitor className="w-4 h-4" />, run: () => { api.toggleMiniHud().catch(() => {}); } },
+              { id: 'snap', label: 'Tüm Fiyatları Dondur (Sezon Snapshot)', icon: <PaletteIcons.Camera className="w-4 h-4" />, run: handleSnapshotAll },
+              { id: 'snd', label: soundOn ? 'UI Mikro Seslerini Kapat' : 'UI Mikro Seslerini Aç', icon: soundOn ? <PaletteIcons.VolumeX className="w-4 h-4" /> : <PaletteIcons.Volume2 className="w-4 h-4" />, run: () => { const n = !soundOn; setSoundOn(n); sound.enabled = n; } },
+              { id: 'set', label: 'Ayarlar, 5 Tema & Cloudflare Tüneli', icon: <PaletteIcons.Settings className="w-4 h-4" />, run: () => setShowSettings(true) },
+            ]}
+          />
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {toast && (

@@ -170,6 +170,7 @@ const IOS_PWA_HTML: &str = r##"<!doctype html>
   <header>
     <div class="brand"><img src="/icon.png" alt="H" /> Hayye</div>
     <div class="h-right">
+      <button class="t-btn" onclick="enablePush()" title="Bildirim İzni">🔔</button>
       <button class="t-btn" onclick="cycleTheme()" title="Tema Değiştir">◐</button>
       <div class="who-pill">
         <button id="who-m" class="who-btn" onclick="setWho('metehan')">Metehan</button>
@@ -179,7 +180,7 @@ const IOS_PWA_HTML: &str = r##"<!doctype html>
   </header>
   <div class="wrap">
     <form class="add-box" onsubmit="addOrCompare(event)">
-      <input id="u" placeholder="Link yapıştır veya mağazada ürün adı ara..." />
+      <input id="u" placeholder="Link, ürün adı veya Zara ref kodu (1234/567)..." />
       <button class="add-btn" type="submit">Ekle / Ara</button>
     </form>
     <div id="msg"></div>
@@ -364,12 +365,22 @@ const IOS_PWA_HTML: &str = r##"<!doctype html>
       }
     }
 
+    async function enablePush() {
+      const msg = document.getElementById('msg');
+      if (!('Notification' in window)) { msg.textContent = 'Bildirim için Safari -> Ana Ekrana Ekle gerekli.'; return; }
+      const perm = await Notification.requestPermission();
+      msg.textContent = perm === 'granted' ? '✓ iOS bildirim izni açıldı!' : 'Bildirim izni verilmedi.';
+    }
     async function load() {
       fetch('/api/theme').then(r=>r.json()).then(d=>{ if(d.theme) applyTheme(d.theme); }).catch(()=>{});
-      const r = await fetch('/api/products');
+      const r = await fetch('/api/products?who=' + encodeURIComponent(who));
       cache = await r.json();
       render();
     }
+    try {
+      const es = new EventSource('/api/events');
+      es.onmessage = () => { load(); };
+    } catch {}
     async function addOrCompare(e) {
       e.preventDefault();
       const inp = document.getElementById('u');
@@ -434,7 +445,35 @@ pub fn spawn_bridge_server() {
                 let first = lines.next().unwrap_or("");
                 let mut parts = first.split_whitespace();
                 let method = parts.next().unwrap_or("");
-                let path = parts.next().unwrap_or("/").split('?').next().unwrap_or("/");
+                let full_path = parts.next().unwrap_or("/");
+                let mut path_split = full_path.splitn(2, '?');
+                let path = path_split.next().unwrap_or("/");
+                let query_str = path_split.next().unwrap_or("");
+
+                if method == "GET" && path == "/api/events" {
+                    let hdr = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: keep-alive\r\nAccess-Control-Allow-Origin: *\r\n\r\n";
+                    if stream.write_all(hdr.as_bytes()).await.is_err() {
+                        return;
+                    }
+                    let mut rx = crate::events::subscribe();
+                    loop {
+                        match tokio::time::timeout(std::time::Duration::from_secs(25), rx.recv()).await {
+                            Ok(Ok(msg)) => {
+                                let frame = format!("data: {}\n\n", msg);
+                                if stream.write_all(frame.as_bytes()).await.is_err() {
+                                    break;
+                                }
+                            }
+                            Ok(Err(_)) => break,
+                            Err(_) => {
+                                if stream.write_all(b": keepalive\n\n").await.is_err() {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    return;
+                }
 
                 let body_str = req_str
                     .split("\r\n\r\n")
@@ -462,7 +501,20 @@ pub fn spawn_bridge_server() {
                 } else if method == "GET" && path == "/manifest.webmanifest" {
                     ("200 OK", "application/manifest+json", MANIFEST_JSON.to_string())
                 } else if method == "GET" && path == "/ping" {
-                    ("200 OK", "application/json", r#"{"ok":true,"app":"Hayye Market","version":"3.1.0"}"#.to_string())
+                    ("200 OK", "application/json", r#"{"ok":true,"app":"Hayye Market","version":"4.0.0"}"#.to_string())
+                } else if method == "POST" && path == "/api/push/subscribe" {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(body_str) {
+                        let ep = v["endpoint"].as_str().unwrap_or("");
+                        let p256 = v["keys"]["p256dh"].as_str().unwrap_or("");
+                        let auth = v["keys"]["auth"].as_str().unwrap_or("");
+                        let who = v["who"].as_str().unwrap_or("metehan");
+                        if !ep.is_empty() {
+                            let _ = db::open_db().and_then(|c| db::save_push_subscription(&c, ep, p256, auth, who));
+                        }
+                        ("200 OK", "application/json", r#"{"ok":true}"#.to_string())
+                    } else {
+                        ("400 Bad Request", "application/json", r#"{"error":"Geçersiz JSON"}"#.to_string())
+                    }
                 } else if method == "GET" && path == "/api/discover" {
                     let settings = db::open_db().map(|c| db::load_settings(&c)).unwrap_or(crate::models::AlertSettings {
                         discord_webhook: String::new(),
@@ -479,6 +531,8 @@ pub fn spawn_bridge_server() {
                         discover_keywords: String::new(),
                         discover_muted: String::new(),
                         discover_alerts_enabled: false,
+                        sound_enabled: true,
+                        auto_scan_enabled: true,
                     });
                     let list = crate::discover::fetch_discover_feed(&settings).await;
                     ("200 OK", "application/json", serde_json::to_string(&list).unwrap_or_else(|_| "[]".into()))
@@ -505,8 +559,16 @@ pub fn spawn_bridge_server() {
                         ("400 Bad Request", "application/json", r#"{"error":"Geçersiz JSON"}"#.to_string())
                     }
                 } else if method == "GET" && path == "/api/products" {
+                    let hide_secret = query_str.to_lowercase().contains("who=ilayda");
                     match db::open_db().and_then(|c| db::list_products(&c)) {
-                        Ok(list) => ("200 OK", "application/json", serde_json::to_string(&list).unwrap_or_else(|_| "[]".into())),
+                        Ok(list) => {
+                            let filtered: Vec<_> = if hide_secret {
+                                list.into_iter().filter(|p| !p.is_secret_gift).collect()
+                            } else {
+                                list
+                            };
+                            ("200 OK", "application/json", serde_json::to_string(&filtered).unwrap_or_else(|_| "[]".into()))
+                        }
                         Err(e) => ("500 Internal Server Error", "application/json", format!(r#"{{"error":"{}"}}"#, e)),
                     }
                 } else if method == "GET" && path == "/products" {
@@ -527,7 +589,10 @@ pub fn spawn_bridge_server() {
                         let vote = v["vote"].as_str().unwrap_or("");
                         let note = v["note"].as_str();
                         match db::open_db().and_then(|c| db::set_product_vote(&c, pid, who, vote, note)) {
-                            Ok(_) => ("200 OK", "application/json", r#"{"ok":true}"#.to_string()),
+                            Ok(_) => {
+                                crate::events::emit("vote_updated");
+                                ("200 OK", "application/json", r#"{"ok":true}"#.to_string())
+                            }
                             Err(e) => ("500 Internal Server Error", "application/json", format!(r#"{{"error":"{}"}}"#, e)),
                         }
                     } else {

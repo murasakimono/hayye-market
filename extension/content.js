@@ -3,8 +3,46 @@
   if (document.getElementById('hayye-floating-pill')) return;
 
   const host = location.hostname.replace(/^www\./, '');
-  const isSecondHand = /sahibinden|dolap|letgo/i.test(host);
+  const isSecondHand = /sahibinden|dolap|letgo|gardrops/i.test(host);
   const isFavOrCart = /favori|wishlist|sepet|cart|bag|saved|lists|likes/i.test(location.pathname + location.search);
+
+  // 2. El "Yeni İlan Farkı" Nöbeti (Sahibinden / Dolap / Gardrops / Letgo)
+  if (isSecondHand) {
+    try {
+      const storeKey = 'hayye_seen_2el_' + host + '_' + location.pathname;
+      const prevMap = JSON.parse(localStorage.getItem(storeKey) || '{}');
+      const nextMap = { ...prevMap };
+      const hasHistory = Object.keys(prevMap).length > 0;
+      document.querySelectorAll('tr.searchResultsItem, [class*="product" i], [class*="card" i]').forEach((row) => {
+        const a = row.querySelector('a[href]');
+        if (!a) return;
+        const id = a.getAttribute('href').split('?')[0];
+        const txt = (row.textContent || '').replace(/\s+/g, ' ');
+        const pm = txt.match(/(\d{1,3}(?:\.\d{3})+|\d{3,6})\s*(?:TL|₺)/i);
+        const price = pm ? parseFloat(pm[1].replace(/\./g, '')) : 0;
+        if (!id || price <= 0) return;
+        nextMap[id] = price;
+        if (hasHistory) {
+          if (!(id in prevMap)) {
+            row.style.outline = '2px solid #10B981';
+            row.style.borderRadius = '10px';
+            const tag = document.createElement('span');
+            tag.textContent = '✦ YENİ İLAN';
+            tag.style.cssText = 'display:inline-block;margin:4px;padding:2px 7px;border-radius:999px;background:#10B981;color:#07100C;font-size:10px;font-weight:700;';
+            row.prepend(tag);
+          } else if (price < prevMap[id] - 20) {
+            const diff = Math.round(prevMap[id] - price).toLocaleString('tr-TR');
+            row.style.outline = '2px solid #3B82F6';
+            const tag = document.createElement('span');
+            tag.textContent = `↓ -${diff} ₺ DÜŞTÜ`;
+            tag.style.cssText = 'display:inline-block;margin:4px;padding:2px 7px;border-radius:999px;background:#3B82F6;color:#fff;font-size:10px;font-weight:700;';
+            row.prepend(tag);
+          }
+        }
+      });
+      localStorage.setItem(storeKey, JSON.stringify(nextMap));
+    } catch {}
+  }
 
   function parsePrice(str) {
     if (!str) return 0;

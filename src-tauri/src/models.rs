@@ -123,6 +123,15 @@ pub struct ProductDetail {
     pub purchased_at: Option<String>,
     pub snapshot_price_try: Option<f64>,
     pub snapshot_at: Option<String>,
+    pub is_secret_gift: bool,
+    pub cargo_company: String,
+    pub cargo_tracking_no: String,
+    pub warranty_months: u32,
+    pub receipt_note: String,
+    pub wear_count: u32,
+    pub batch_code: String,
+    pub pao_months: u32,
+    pub foreign_eur_price: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -152,6 +161,33 @@ pub struct AlertSettings {
     pub discover_keywords: String,
     pub discover_muted: String,
     pub discover_alerts_enabled: bool,
+    pub sound_enabled: bool,
+    pub auto_scan_enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VaultMetaUpdate {
+    pub product_id: i64,
+    pub is_secret_gift: Option<bool>,
+    pub cargo_company: Option<String>,
+    pub cargo_tracking_no: Option<String>,
+    pub warranty_months: Option<u32>,
+    pub receipt_note: Option<String>,
+    pub batch_code: Option<String>,
+    pub pao_months: Option<u32>,
+    pub foreign_eur_price: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscoverArchiveItem {
+    pub deal_id: String,
+    pub title: String,
+    pub brand: String,
+    pub category: String,
+    pub price_try: f64,
+    pub drop_pct: f64,
+    pub url: String,
+    pub seen_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

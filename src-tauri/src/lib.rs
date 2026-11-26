@@ -1,8 +1,10 @@
 mod bridge;
 mod db;
 mod discover;
+mod events;
 mod models;
 mod notify;
+mod scheduler;
 mod scraper_engine;
 mod tunnel;
 
@@ -338,7 +340,50 @@ fn set_tracked_sizes(product_id: i64, tracked_sizes: String) -> Result<(), Strin
 #[tauri::command]
 fn set_product_vote(product_id: i64, who: String, vote: String, note: Option<String>) -> Result<(), String> {
     let conn = db::open_db()?;
-    db::set_product_vote(&conn, product_id, &who, &vote, note.as_deref())
+    db::set_product_vote(&conn, product_id, &who, &vote, note.as_deref())?;
+    events::emit("vote_updated");
+    Ok(())
+}
+
+#[tauri::command]
+fn update_vault_meta(update: VaultMetaUpdate) -> Result<(), String> {
+    let conn = db::open_db()?;
+    db::update_vault_meta(&conn, &update)?;
+    events::emit("products_updated");
+    Ok(())
+}
+
+#[tauri::command]
+fn increment_wear_count(product_id: i64, delta: i64) -> Result<u32, String> {
+    let conn = db::open_db()?;
+    let n = db::increment_wear_count(&conn, product_id, delta)?;
+    events::emit("products_updated");
+    Ok(n)
+}
+
+#[tauri::command]
+fn get_discover_archive() -> Result<Vec<DiscoverArchiveItem>, String> {
+    let conn = db::open_db()?;
+    db::list_discover_archive(&conn)
+}
+
+#[tauri::command]
+fn toggle_mini_hud(app: tauri::AppHandle) -> Result<bool, String> {
+    if let Some(w) = app.get_webview_window("mini-hud") {
+        let _ = w.close();
+        return Ok(false);
+    }
+    tauri::WebviewWindowBuilder::new(&app, "mini-hud", tauri::WebviewUrl::App("index.html?hud=1".into()))
+        .title("Hayye Mini HUD")
+        .inner_size(340.0, 155.0)
+        .decorations(false)
+        .transparent(true)
+        .always_on_top(true)
+        .resizable(false)
+        .skip_taskbar(true)
+        .build()
+        .map_err(|e| e.to_string())?;
+    Ok(true)
 }
 
 #[tauri::command]
@@ -554,6 +599,7 @@ pub fn run() {
             let _ = db::open_db();
             bridge::spawn_bridge_server();
             tunnel::auto_start_if_configured();
+            scheduler::spawn_autonomous_scheduler();
 
             // Windows System Tray
             let show_i = MenuItem::with_id(app, "show", "Hayye Market'i Göster", true, None::<&str>)?;
@@ -591,6 +637,10 @@ pub fn run() {
             set_target_price,
             set_tracked_sizes,
             set_product_vote,
+            update_vault_meta,
+            increment_wear_count,
+            get_discover_archive,
+            toggle_mini_hud,
             mark_purchased,
             freeze_price_snapshots,
             fetch_discover_deals,

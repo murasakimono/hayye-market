@@ -92,6 +92,23 @@ fn init_schema(conn: &Connection) -> Result<(), String> {
     let _ = conn.execute("ALTER TABLE products ADD COLUMN snapshot_price_try REAL", []);
     let _ = conn.execute("ALTER TABLE products ADD COLUMN snapshot_at TEXT", []);
     let _ = conn.execute("ALTER TABLE products ADD COLUMN custom_css_selector TEXT", []);
+    let _ = conn.execute("ALTER TABLE products ADD COLUMN is_secret_gift INTEGER NOT NULL DEFAULT 0", []);
+    let _ = conn.execute("ALTER TABLE products ADD COLUMN cargo_company TEXT NOT NULL DEFAULT ''", []);
+    let _ = conn.execute("ALTER TABLE products ADD COLUMN cargo_tracking_no TEXT NOT NULL DEFAULT ''", []);
+    let _ = conn.execute("ALTER TABLE products ADD COLUMN warranty_months INTEGER NOT NULL DEFAULT 24", []);
+    let _ = conn.execute("ALTER TABLE products ADD COLUMN receipt_note TEXT NOT NULL DEFAULT ''", []);
+    let _ = conn.execute("ALTER TABLE products ADD COLUMN wear_count INTEGER NOT NULL DEFAULT 0", []);
+    let _ = conn.execute("ALTER TABLE products ADD COLUMN batch_code TEXT NOT NULL DEFAULT ''", []);
+    let _ = conn.execute("ALTER TABLE products ADD COLUMN pao_months INTEGER NOT NULL DEFAULT 24", []);
+    let _ = conn.execute("ALTER TABLE products ADD COLUMN foreign_eur_price REAL", []);
+    let _ = conn.execute(
+        "CREATE TABLE IF NOT EXISTS push_subscriptions (endpoint TEXT PRIMARY KEY, p256dh TEXT NOT NULL, auth TEXT NOT NULL, who TEXT NOT NULL, created_at TEXT NOT NULL)",
+        [],
+    );
+    let _ = conn.execute(
+        "CREATE TABLE IF NOT EXISTS discover_archive (deal_id TEXT PRIMARY KEY, title TEXT NOT NULL, brand TEXT NOT NULL, category TEXT NOT NULL, price_try REAL NOT NULL, drop_pct REAL NOT NULL, url TEXT NOT NULL, seen_at TEXT NOT NULL)",
+        [],
+    );
 
     // Seed default folders
     for name in ["Genel", "Giyim & Inditex", "Kozmetik", "Yeni PC Toplama", "Mutfak Çeyiz", "2. El Avı"] {
@@ -345,7 +362,7 @@ pub fn compute_discount_verdict(current_best: f64, history: &[PricePoint]) -> Di
 pub fn list_products(conn: &Connection) -> Result<Vec<ProductDetail>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT p.id, p.folder_id, COALESCE(f.name, 'Genel'), p.title, p.image_url, p.primary_url, p.target_price_try, p.updated_at, COALESCE(p.tracked_sizes, ''), COALESCE(p.sizes_json, '[]'), p.quick_checkout_url, COALESCE(p.vote_metehan, ''), COALESCE(p.vote_ilayda, ''), COALESCE(p.shared_note, ''), COALESCE(p.added_by, 'Metehan'), p.purchased_price_try, p.purchased_at, p.snapshot_price_try, p.snapshot_at
+            "SELECT p.id, p.folder_id, COALESCE(f.name, 'Genel'), p.title, p.image_url, p.primary_url, p.target_price_try, p.updated_at, COALESCE(p.tracked_sizes, ''), COALESCE(p.sizes_json, '[]'), p.quick_checkout_url, COALESCE(p.vote_metehan, ''), COALESCE(p.vote_ilayda, ''), COALESCE(p.shared_note, ''), COALESCE(p.added_by, 'Metehan'), p.purchased_price_try, p.purchased_at, p.snapshot_price_try, p.snapshot_at, COALESCE(p.is_secret_gift, 0), COALESCE(p.cargo_company, ''), COALESCE(p.cargo_tracking_no, ''), COALESCE(p.warranty_months, 24), COALESCE(p.receipt_note, ''), COALESCE(p.wear_count, 0), COALESCE(p.batch_code, ''), COALESCE(p.pao_months, 24), p.foreign_eur_price
              FROM products p LEFT JOIN folders f ON p.folder_id = f.id
              ORDER BY p.id DESC",
         )
@@ -371,6 +388,15 @@ pub fn list_products(conn: &Connection) -> Result<Vec<ProductDetail>, String> {
         purchased_at: Option<String>,
         snapshot_price_try: Option<f64>,
         snapshot_at: Option<String>,
+        is_secret_gift: bool,
+        cargo_company: String,
+        cargo_tracking_no: String,
+        warranty_months: u32,
+        receipt_note: String,
+        wear_count: u32,
+        batch_code: String,
+        pao_months: u32,
+        foreign_eur_price: Option<f64>,
     }
 
     let rows: Vec<RawProdRow> = stmt
@@ -395,6 +421,15 @@ pub fn list_products(conn: &Connection) -> Result<Vec<ProductDetail>, String> {
                 purchased_at: r.get(16)?,
                 snapshot_price_try: r.get(17)?,
                 snapshot_at: r.get(18)?,
+                is_secret_gift: r.get::<_, i64>(19)? != 0,
+                cargo_company: r.get(20)?,
+                cargo_tracking_no: r.get(21)?,
+                warranty_months: r.get::<_, i64>(22)?.max(0) as u32,
+                receipt_note: r.get(23)?,
+                wear_count: r.get::<_, i64>(24)?.max(0) as u32,
+                batch_code: r.get(25)?,
+                pao_months: r.get::<_, i64>(26)?.max(0) as u32,
+                foreign_eur_price: r.get(27)?,
             })
         })
         .map_err(|e| e.to_string())?
@@ -407,6 +442,8 @@ pub fn list_products(conn: &Connection) -> Result<Vec<ProductDetail>, String> {
             id, folder_id, folder_name, title, image_url, primary_url, target_price_try, updated_at,
             tracked_sizes, sizes_json, quick_checkout_url, vote_metehan, vote_ilayda, shared_note,
             added_by, purchased_price_try, purchased_at, snapshot_price_try, snapshot_at,
+            is_secret_gift, cargo_company, cargo_tracking_no, warranty_months, receipt_note,
+            wear_count, batch_code, pao_months, foreign_eur_price,
         } = rp;
         // History
         let mut hstmt = conn
@@ -599,6 +636,15 @@ pub fn list_products(conn: &Connection) -> Result<Vec<ProductDetail>, String> {
             purchased_at,
             snapshot_price_try,
             snapshot_at,
+            is_secret_gift,
+            cargo_company,
+            cargo_tracking_no,
+            warranty_months,
+            receipt_note,
+            wear_count,
+            batch_code,
+            pao_months,
+            foreign_eur_price,
         });
     }
 
@@ -809,6 +855,77 @@ pub fn freeze_price_snapshots(conn: &Connection) -> Result<usize, String> {
     Ok(count)
 }
 
+pub fn update_vault_meta(conn: &Connection, u: &VaultMetaUpdate) -> Result<(), String> {
+    if let Some(v) = u.is_secret_gift {
+        conn.execute("UPDATE products SET is_secret_gift = ?1 WHERE id = ?2", params![if v { 1 } else { 0 }, u.product_id]).map_err(|e| e.to_string())?;
+    }
+    if let Some(ref v) = u.cargo_company {
+        conn.execute("UPDATE products SET cargo_company = ?1 WHERE id = ?2", params![v.trim(), u.product_id]).map_err(|e| e.to_string())?;
+    }
+    if let Some(ref v) = u.cargo_tracking_no {
+        conn.execute("UPDATE products SET cargo_tracking_no = ?1 WHERE id = ?2", params![v.trim(), u.product_id]).map_err(|e| e.to_string())?;
+    }
+    if let Some(v) = u.warranty_months {
+        conn.execute("UPDATE products SET warranty_months = ?1 WHERE id = ?2", params![v as i64, u.product_id]).map_err(|e| e.to_string())?;
+    }
+    if let Some(ref v) = u.receipt_note {
+        conn.execute("UPDATE products SET receipt_note = ?1 WHERE id = ?2", params![v.trim(), u.product_id]).map_err(|e| e.to_string())?;
+    }
+    if let Some(ref v) = u.batch_code {
+        conn.execute("UPDATE products SET batch_code = ?1 WHERE id = ?2", params![v.trim(), u.product_id]).map_err(|e| e.to_string())?;
+    }
+    if let Some(v) = u.pao_months {
+        conn.execute("UPDATE products SET pao_months = ?1 WHERE id = ?2", params![v as i64, u.product_id]).map_err(|e| e.to_string())?;
+    }
+    if let Some(v) = u.foreign_eur_price {
+        let val = if v > 0.0 { Some(v) } else { None };
+        conn.execute("UPDATE products SET foreign_eur_price = ?1 WHERE id = ?2", params![val, u.product_id]).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+pub fn increment_wear_count(conn: &Connection, product_id: i64, delta: i64) -> Result<u32, String> {
+    conn.execute(
+        "UPDATE products SET wear_count = MAX(0, COALESCE(wear_count, 0) + ?1) WHERE id = ?2",
+        params![delta, product_id],
+    ).map_err(|e| e.to_string())?;
+    let next: i64 = conn
+        .query_row("SELECT COALESCE(wear_count, 0) FROM products WHERE id = ?1", params![product_id], |r| r.get(0))
+        .unwrap_or(0);
+    Ok(next.max(0) as u32)
+}
+
+pub fn list_discover_archive(conn: &Connection) -> Result<Vec<DiscoverArchiveItem>, String> {
+    let mut stmt = conn
+        .prepare("SELECT deal_id, title, brand, category, price_try, drop_pct, url, seen_at FROM discover_archive ORDER BY drop_pct DESC LIMIT 12")
+        .map_err(|e| e.to_string())?;
+    let items = stmt
+        .query_map([], |r| {
+            Ok(DiscoverArchiveItem {
+                deal_id: r.get(0)?,
+                title: r.get(1)?,
+                brand: r.get(2)?,
+                category: r.get(3)?,
+                price_try: r.get(4)?,
+                drop_pct: r.get(5)?,
+                url: r.get(6)?,
+                seen_at: r.get(7)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .filter_map(Result::ok)
+        .collect();
+    Ok(items)
+}
+
+pub fn save_push_subscription(conn: &Connection, endpoint: &str, p256dh: &str, auth: &str, who: &str) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO push_subscriptions (endpoint, p256dh, auth, who, created_at) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(endpoint) DO UPDATE SET p256dh=excluded.p256dh, auth=excluded.auth, who=excluded.who",
+        params![endpoint, p256dh, auth, who, Utc::now().to_rfc3339()],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 pub fn get_saved_total(conn: &Connection) -> f64 {
     conn.query_row("SELECT val FROM settings WHERE key = 'saved_total_try'", [], |r| r.get::<_, String>(0))
         .ok()
@@ -852,6 +969,8 @@ pub fn load_settings(conn: &Connection) -> AlertSettings {
             "bebek bezi, deterjan, kedi maması, köpek maması, oto lastik, tuvalet kağıdı, yumuşatıcı",
         ),
         discover_alerts_enabled: get("discover_alerts_enabled", "1") != "0",
+        sound_enabled: get("sound_enabled", "1") != "0",
+        auto_scan_enabled: get("auto_scan_enabled", "1") != "0",
     }
 }
 
@@ -870,10 +989,9 @@ pub fn save_settings(conn: &Connection, s: &AlertSettings) -> Result<(), String>
         ("user_cards", s.user_cards.clone()),
         ("discover_keywords", s.discover_keywords.clone()),
         ("discover_muted", s.discover_muted.clone()),
-        (
-            "discover_alerts_enabled",
-            if s.discover_alerts_enabled { "1" } else { "0" }.to_string(),
-        ),
+        ("discover_alerts_enabled", if s.discover_alerts_enabled { "1" } else { "0" }.to_string()),
+        ("sound_enabled", if s.sound_enabled { "1" } else { "0" }.to_string()),
+        ("auto_scan_enabled", if s.auto_scan_enabled { "1" } else { "0" }.to_string()),
     ];
     for (k, v) in pairs {
         conn.execute(
