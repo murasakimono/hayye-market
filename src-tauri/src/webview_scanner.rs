@@ -68,13 +68,6 @@ pub const SITES: &[SiteDef] = &[
         scan_url: "https://www.passo.com.tr/tr/kategori/muzik-konser-festival-biletleri/8615",
     },
     SiteDef {
-        id: "zorlupsm",
-        name: "Zorlu PSM",
-        kind: "events",
-        login_url: "https://www.zorlupsm.com/tr/etkinlikler",
-        scan_url: "https://www.zorlupsm.com/tr/etkinlikler",
-    },
-    SiteDef {
         id: "paribu",
         name: "Paribu Pass",
         kind: "events",
@@ -267,7 +260,7 @@ fn build_events_extractor_script(source_name: &str, site_id: &str) -> String {
     const out = [];
     const seen = new Set();
     const anchors = Array.from(document.querySelectorAll(
-      "a[href*='/etkinlik'], a[href*='/event'], a[href*='/konser'], a[href*='/tiyatro'], a[href*='/stand-up'], a[href*='/muzik'], a[href*='etkinlik-detay'], article a[href]"
+      "a[href*='/etkinlik'], a[href*='/event'], a[href*='/konser'], a[href*='/tiyatro'], a[href*='/stand-up'], a[href*='/muzik'], a[href*='/film'], a[href*='etkinlik-detay'], article a[href]"
     ));
 
     for (const a of anchors) {{
@@ -332,9 +325,17 @@ fn build_events_extractor_script(source_name: &str, site_id: &str) -> String {
 
   setTimeout(() => {{
     if (!extract()) {{
-      setTimeout(extract, 2600);
+      setTimeout(() => {{
+        if (!extract()) {{
+          fetch(BRIDGE + "/api/webview-scan-empty", {{
+            method: "POST",
+            headers: {{ "Content-Type": "application/json" }},
+            body: JSON.stringify({{ site_id: SITE_ID, source: SOURCE, page_title: (document.title || "").slice(0, 60) }})
+          }}).catch(() => {{}});
+        }}
+      }}, 3000);
     }}
-  }}, 2600);
+  }}, 2800);
 }})();
 "##,
         source_name = source_name,
@@ -374,20 +375,21 @@ fn build_shopping_extractor_script(source_name: &str, site_id: &str) -> String {
     const out = [];
     const seen = new Set();
     const cards = Array.from(document.querySelectorAll(
-      ".p-card-wrppr, [data-testid='product-card'], li.product-grid-product, tr.searchResultsItem, article, [class*='product-card'], [class*='ProductCard']"
+      ".p-card-wrppr, .product-card, .product-tile, [data-testid='product-card'], [data-tc-product-name], li.product-grid-product, tr.searchResultsItem, a[href*='/urun/'], a[href*='-p-'], article, [class*='ProductCard'], [class*='ProductTile'], [class*='product-item']"
     ));
 
     for (const card of cards) {{
-      const a = card.querySelector("a[href]");
+      const a = card.tagName === "A" ? card : card.querySelector("a[href]");
       if (!a || !a.href || !a.href.startsWith("http") || seen.has(a.href)) continue;
-      const price = parseTry(card.innerText || "");
+      const box = card.closest("article, li, [class*='card'], [class*='tile'], [class*='item']") || card;
+      const price = parseTry(box.innerText || card.innerText || "");
       if (price <= 10 || price > 2000000) continue;
 
-      const tEl = card.querySelector("h2, h3, .prdct-desc-cntnr-name, .classifiedTitle, [class*='title'], [class*='name']");
+      const tEl = box.querySelector("h2, h3, h4, .prdct-desc-cntnr-name, .product-name, .classifiedTitle, [class*='title'], [class*='name']");
       const title = (tEl ? tEl.innerText : (a.getAttribute("title") || a.innerText || "")).replace(/\s+/g, " ").trim();
       if (title.length < 4) continue;
 
-      const imgEl = card.querySelector("img");
+      const imgEl = box.querySelector("img");
       let img = imgEl ? (imgEl.getAttribute("data-src") || imgEl.getAttribute("src") || "") : "";
       if (img.startsWith("//")) img = "https:" + img;
       if (img.startsWith("data:")) img = "";
@@ -417,8 +419,18 @@ fn build_shopping_extractor_script(source_name: &str, site_id: &str) -> String {
   }}
 
   setTimeout(() => {{
-    if (!extract()) setTimeout(extract, 2600);
-  }}, 2600);
+    if (!extract()) {{
+      setTimeout(() => {{
+        if (!extract()) {{
+          fetch(BRIDGE + "/api/webview-scan-empty", {{
+            method: "POST",
+            headers: {{ "Content-Type": "application/json" }},
+            body: JSON.stringify({{ site_id: SITE_ID, source: SOURCE, page_title: (document.title || "").slice(0, 60) }})
+          }}).catch(() => {{}});
+        }}
+      }}, 3000);
+    }}
+  }}, 2800);
 }})();
 "##,
         source_name = source_name,

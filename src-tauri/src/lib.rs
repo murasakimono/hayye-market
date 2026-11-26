@@ -644,10 +644,10 @@ async fn open_site_session(app: tauri::AppHandle, site_id: String) -> Result<Str
 
 #[tauri::command]
 async fn scan_events_via_webview(app: tauri::AppHandle) -> Result<String, String> {
-    for sid in ["bubilet", "biletix", "passo", "zorlupsm"] {
+    for sid in ["bubilet", "biletix", "paribu"] {
         let _ = webview_scanner::spawn_background_scan(&app, sid, None);
     }
-    Ok("Bubilet, Biletix, Passo ve Zorlu PSM arka planda taranıyor (sonuçlar ~4-6 sn içinde otomatik düşecek).".to_string())
+    Ok("Bubilet, Biletix ve Paribu Pass arka planda taranıyor (sonuçlar ~5 sn içinde otomatik düşecek).".to_string())
 }
 
 #[tauri::command]
@@ -670,13 +670,16 @@ fn get_webview_search_results() -> Vec<SearchCandidate> {
 
 #[tauri::command]
 async fn test_single_site_scan(app: tauri::AppHandle, site_id: String) -> Result<String, String> {
-    let q = if ["bubilet", "biletix", "passo", "zorlupsm", "paribu"].contains(&site_id.as_str()) {
+    if let Ok(conn) = db::open_db() {
+        let _ = db::update_site_session_status(&conn, &site_id, "pending", None, "Canlı taranıyor...");
+    }
+    let q = if ["bubilet", "biletix", "passo", "paribu"].contains(&site_id.as_str()) {
         None
     } else {
         Some("parfüm")
     };
     webview_scanner::spawn_background_scan(&app, &site_id, q)?;
-    Ok(format!("{} arka planda canlı test ediliyor (4-6 sn içinde gerçek çekilen sayı görünür)...", site_id))
+    Ok(format!("{} arka planda canlı test ediliyor (5 sn içinde sonuç kartta güncellenecek)...", site_id))
 }
 
 #[tauri::command]

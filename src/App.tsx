@@ -1252,7 +1252,6 @@ export default function App() {
                   { label: 'Biletix ↗', url: 'https://www.biletix.com/anasayfa/TURKIYE/tr' },
                   { label: 'Passo ↗', url: 'https://www.passo.com.tr/tr/kategori/muzik-konser-festival-biletleri/8615' },
                   { label: 'Paribu Pass ↗', url: 'https://www.paribucineverse.com' },
-                  { label: 'Zorlu PSM ↗', url: 'https://www.zorlupsm.com/tr/etkinlikler' },
                 ].map((site) => (
                   <button
                     key={site.label}
@@ -1311,7 +1310,7 @@ export default function App() {
                   style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}
                 >
                   <Zap className="w-3.5 h-3.5" />
-                  Arka Planda Tara (Bubilet • Biletix • Passo • Zorlu)
+                  Arka Planda Tara (Bubilet • Biletix • Paribu)
                 </button>
                 <button
                   onClick={loadEvents}
