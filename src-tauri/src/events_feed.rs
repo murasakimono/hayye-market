@@ -8,9 +8,11 @@ use std::time::Duration;
 
 fn city_to_slug(city: &str) -> String {
     city.trim()
-        .to_lowercase()
-        .replace('ı', "i")
         .replace('İ', "i")
+        .replace('I', "i")
+        .to_lowercase()
+        .replace('\u{0307}', "")
+        .replace('ı', "i")
         .replace('ş', "s")
         .replace('ğ', "g")
         .replace('ü', "u")
@@ -242,6 +244,16 @@ async fn fetch_mobilet_events(client: &reqwest::Client, city_display: &str) -> V
                     }
                 })
                 .find(|s| s.starts_with("http") && !s.contains("data:image"))
+                .or_else(|| {
+                    let raw = a.html();
+                    if let Some(pos) = raw.find("https://cdn.mobilet.com/") {
+                        let tail = &raw[pos..];
+                        let end = tail.find(|c| c == '"' || c == '\'' || c == ')' || c == ' ').unwrap_or(tail.len());
+                        Some(tail[..end].to_string())
+                    } else {
+                        None
+                    }
+                })
                 .unwrap_or_default();
 
             if !seen.insert(full_url.clone()) {
